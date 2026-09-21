@@ -1,0 +1,41 @@
+{
+  "uid": "line_item_watch_webhooks",
+  "type": "webhooks",
+  "config": {
+    "settings": {
+      "targetUrl": "https://example.invalid/line-item-watch-webhook",
+      "maxConcurrentRequests": 1
+    },
+    "subscriptions": {
+      "crmObjects": [
+        {
+          "subscriptionType": "object.propertyChange",
+          "objectType": "line_item",
+          "propertyName": "quantity",
+          "active": true
+        },
+        {
+          "subscriptionType": "object.propertyChange",
+          "objectType": "line_item",
+          "propertyName": "hs_discount_percentage",
+          "active": true
+        },
+        {
+          "subscriptionType": "object.creation",
+          "objectType": "line_item",
+          "active": true
+        },
+        {
+          "subscriptionType": "object.deletion",
+          "objectType": "line_item",
+          "active": true
+        },
+        {
+          "subscriptionType": "object.associationChange",
+          "objectType": "line_item",
+          "active": true
+        }
+      ]
+    }
+  }
+}

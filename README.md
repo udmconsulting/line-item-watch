@@ -66,3 +66,33 @@ Gate 2 passes only when the returned `quantity` history deterministically shows
 shows `10 -> 20`. Both must be ordered using HubSpot-provided timestamps or
 metadata; calculated properties cannot substitute for either direct property
 history.
+
+### Deletion recovery gate
+
+This read-only probe tests whether an archived line item still exposes its
+properties, property history, former Deal association, and deletion metadata.
+
+Set `HUBSPOT_ACCESS_TOKEN` to the static app access token and
+`HUBSPOT_LINE_ITEM_ID` to the deleted Line Item ID, then run:
+
+```sh
+node spike/read-deleted-line-item.mjs
+```
+
+The live deletion test returned HTTP 404 both normally and with
+`archived=true`, so the deleted record, its properties, property history, and
+former associations could not be recovered.
+
+### Empirical feasibility result
+
+- Gate 1: **PASS** — current Line Item properties and Deal associations are
+  readable.
+- Gate 2: **PASS** — `propertiesWithHistory` deterministically reconstructed
+  quantity `10 -> 8` and discount `10 -> 20`.
+- Gate 3: **PASS** — webhooks reported property changes, creation, deletion,
+  and association creation/removal in both directions.
+- Deletion recovery: **MODEL B** — a deleted Line Item could not be re-read,
+  including with `archived=true`.
+
+Architectural implication: maintain an initial baseline and latest Line Item
+snapshot so deletion audit entries can use the last known state.
