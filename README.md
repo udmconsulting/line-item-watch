@@ -42,3 +42,27 @@ Gate 1 passes only when the output contains the Enterprise Licence line item,
 its current quantity, unit price, and discount, a clear association back to the
 ACME Deal, and the available commercial and billing fields exposed by the test
 account.
+
+### Gate 2: line-item property history
+
+Gate 2 is a read-only probe that tests whether HubSpot's current line-item API
+returns enough timestamped property history to reconstruct exact old-to-new
+quantity and discount transitions without inference from calculated totals.
+
+The probe requires these environment variables:
+
+- `HUBSPOT_ACCESS_TOKEN`: the static app access token. Never store it in this
+  repository.
+- `HUBSPOT_LINE_ITEM_ID`: the Line Item record ID to inspect.
+
+After setting both variables in the current shell, run:
+
+```sh
+node spike/read-line-item-history.mjs
+```
+
+Gate 2 passes only when the returned `quantity` history deterministically shows
+`10 -> 8` and the returned `hs_discount_percentage` history deterministically
+shows `10 -> 20`. Both must be ordered using HubSpot-provided timestamps or
+metadata; calculated properties cannot substitute for either direct property
+history.
