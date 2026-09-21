@@ -42,3 +42,57 @@ Gate 1 passes only when the output contains the Enterprise Licence line item,
 its current quantity, unit price, and discount, a clear association back to the
 ACME Deal, and the available commercial and billing fields exposed by the test
 account.
+
+### Gate 2: line-item property history
+
+Gate 2 is a read-only probe that tests whether HubSpot's current line-item API
+returns enough timestamped property history to reconstruct exact old-to-new
+quantity and discount transitions without inference from calculated totals.
+
+The probe requires these environment variables:
+
+- `HUBSPOT_ACCESS_TOKEN`: the static app access token. Never store it in this
+  repository.
+- `HUBSPOT_LINE_ITEM_ID`: the Line Item record ID to inspect.
+
+After setting both variables in the current shell, run:
+
+```sh
+node spike/read-line-item-history.mjs
+```
+
+Gate 2 passes only when the returned `quantity` history deterministically shows
+`10 -> 8` and the returned `hs_discount_percentage` history deterministically
+shows `10 -> 20`. Both must be ordered using HubSpot-provided timestamps or
+metadata; calculated properties cannot substitute for either direct property
+history.
+
+### Deletion recovery gate
+
+This read-only probe tests whether an archived line item still exposes its
+properties, property history, former Deal association, and deletion metadata.
+
+Set `HUBSPOT_ACCESS_TOKEN` to the static app access token and
+`HUBSPOT_LINE_ITEM_ID` to the deleted Line Item ID, then run:
+
+```sh
+node spike/read-deleted-line-item.mjs
+```
+
+The live deletion test returned HTTP 404 both normally and with
+`archived=true`, so the deleted record, its properties, property history, and
+former associations could not be recovered.
+
+### Empirical feasibility result
+
+- Gate 1: **PASS** — current Line Item properties and Deal associations are
+  readable.
+- Gate 2: **PASS** — `propertiesWithHistory` deterministically reconstructed
+  quantity `10 -> 8` and discount `10 -> 20`.
+- Gate 3: **PASS** — webhooks reported property changes, creation, deletion,
+  and association creation/removal in both directions.
+- Deletion recovery: **MODEL B** — a deleted Line Item could not be re-read,
+  including with `archived=true`.
+
+Architectural implication: maintain an initial baseline and latest Line Item
+snapshot so deletion audit entries can use the last known state.
