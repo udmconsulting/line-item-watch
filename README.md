@@ -1,98 +1,42 @@
-# HubSpot Getting Started Project Template
+# Line Item Watch
 
-This is the Getting Started project for HubSpot developer projects. It contains a private app, a CRM card written in React, and a serverless function that the CRM card is able to interact with. This code is intended to help developers get up and running with developer projects quickly and easily.
+Line Item Watch is the first Product Module of a planned modular B2B SaaS. Its initial purpose is to give HubSpot users a useful audit history for Deal Line Item changes: what changed, old and new values, when, who where available, and creation/removal behavior.
 
-## Requirements
+The repository currently contains accepted HubSpot feasibility probes and the P.0 governance/documentation baseline. Production application functionality has not been implemented.
 
-There are a few things that must be set up before you can make use of this getting started project.
+## Project documentation
 
-- You must have an active HubSpot account.
-- You must have the [HubSpot CLI](https://www.npmjs.com/package/@hubspot/cli) installed and set up.
-- You must have access to developer projects.
+- [Product overview](docs/business/product-overview.md)
+- [Private Beta scope](docs/business/beta-v1.md)
+- [Product Module model](docs/business/modules.md)
+- [Architecture overview](docs/architecture/system-overview.md)
+- [Modularity](docs/architecture/modularity.md)
+- [Provider integration](docs/architecture/provider-integration.md)
+- [Local development](docs/development/local-development.md)
+- [Adding a Product Module or provider](docs/development/adding-a-module.md)
+- [Security overview](docs/trust/security-overview.md)
+- [Data processing inventory](docs/trust/data-processing.md)
+- [Legal/trust readiness](docs/trust/legal-readiness.md)
+- [Agent execution contract](AGENTS.md)
 
-## Usage
+## Technical feasibility evidence
 
-The HubSpot CLI enables you to run this project locally so that you may test and iterate quickly. Getting started is simple, just run this HubSpot CLI command in your project directory and follow the prompts:
+The accepted spike against HubSpot platform `2026.09` established:
 
-`hs project dev`
+- **Gate 1 — PASS:** current Line Item properties and Deal associations are readable.
+- **Gate 2 — PASS:** `propertiesWithHistory` deterministically reconstructed quantity `10 -> 8` and discount `10 -> 20`.
+- **Gate 3 — PASS:** webhooks reported Line Item property changes, creation, deletion, and association creation/removal.
+- **Deletion — MODEL B:** the deleted Line Item could not be read normally or with `archived=true`; the product must retain an initial baseline and latest known snapshot for deletion audit.
 
-## Technical feasibility spike
+Evidence and read-only probe code:
 
-Gate 1 is a read-only probe that verifies whether HubSpot exposes the current
-commercial properties and Deal associations for line items. It does not modify
-HubSpot data.
+- [`spike/read-line-items.mjs`](spike/read-line-items.mjs)
+- [`spike/read-line-item-history.mjs`](spike/read-line-item-history.mjs)
+- [`spike/read-deleted-line-item.mjs`](spike/read-deleted-line-item.mjs)
+- [`spike/evidence/line-item-watch-webhooks.example.json`](spike/evidence/line-item-watch-webhooks.example.json)
 
-The probe requires these environment variables:
+These probes make live HubSpot API reads and are not routine documentation checks. They require scoped environment-provided credentials and approved test identifiers. Never commit or print token values, and do not rerun live/destructive spike work as part of P.0.
 
-- `HUBSPOT_ACCESS_TOKEN`: the static app access token. Never store it in this
-  repository.
-- `HUBSPOT_DEAL_ID`: the ACME test Deal record ID.
+## Architecture in one sentence
 
-After setting both variables in the current shell, run:
-
-```sh
-node spike/read-line-items.mjs
-```
-
-The command prints a concise summary followed by machine-readable JSON with the
-discovered property definitions, selected commercial property values, line-item
-IDs, and Deal associations.
-
-Gate 1 passes only when the output contains the Enterprise Licence line item,
-its current quantity, unit price, and discount, a clear association back to the
-ACME Deal, and the available commercial and billing fields exposed by the test
-account.
-
-### Gate 2: line-item property history
-
-Gate 2 is a read-only probe that tests whether HubSpot's current line-item API
-returns enough timestamped property history to reconstruct exact old-to-new
-quantity and discount transitions without inference from calculated totals.
-
-The probe requires these environment variables:
-
-- `HUBSPOT_ACCESS_TOKEN`: the static app access token. Never store it in this
-  repository.
-- `HUBSPOT_LINE_ITEM_ID`: the Line Item record ID to inspect.
-
-After setting both variables in the current shell, run:
-
-```sh
-node spike/read-line-item-history.mjs
-```
-
-Gate 2 passes only when the returned `quantity` history deterministically shows
-`10 -> 8` and the returned `hs_discount_percentage` history deterministically
-shows `10 -> 20`. Both must be ordered using HubSpot-provided timestamps or
-metadata; calculated properties cannot substitute for either direct property
-history.
-
-### Deletion recovery gate
-
-This read-only probe tests whether an archived line item still exposes its
-properties, property history, former Deal association, and deletion metadata.
-
-Set `HUBSPOT_ACCESS_TOKEN` to the static app access token and
-`HUBSPOT_LINE_ITEM_ID` to the deleted Line Item ID, then run:
-
-```sh
-node spike/read-deleted-line-item.mjs
-```
-
-The live deletion test returned HTTP 404 both normally and with
-`archived=true`, so the deleted record, its properties, property history, and
-former associations could not be recovered.
-
-### Empirical feasibility result
-
-- Gate 1: **PASS** — current Line Item properties and Deal associations are
-  readable.
-- Gate 2: **PASS** — `propertiesWithHistory` deterministically reconstructed
-  quantity `10 -> 8` and discount `10 -> 20`.
-- Gate 3: **PASS** — webhooks reported property changes, creation, deletion,
-  and association creation/removal in both directions.
-- Deletion recovery: **MODEL B** — a deleted Line Item could not be re-read,
-  including with `archived=true`.
-
-Architectural implication: maintain an initial baseline and latest Line Item
-snapshot so deletion audit entries can use the last known state.
+Start with a modular monolith: shared Platform Core capabilities, independently owned Product Modules, focused external-provider adapters, explicit tenant/connection provenance, and simple infrastructure until measured needs justify separation.
