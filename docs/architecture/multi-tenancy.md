@@ -2,9 +2,9 @@
 
 ## Identity model
 
-The product is a multi-tenant SaaS. An internal **Tenant** owns customer data and lifecycle. A **Platform Connection** belongs to a Tenant and records an internal connection identity, provider, external provider account identity, and lifecycle/status. Provider identities do not define tenants.
+The product is a multi-tenant SaaS. An internal **Tenant** owns customer data and lifecycle. A **Platform Connection** belongs to a Tenant and records an internal connection identity, provider, external provider account identity, and Tenant ownership. Provider identities do not define tenants.
 
-A tenant may eventually have multiple providers or multiple accounts for one provider. Exact persistence schema is TBD.
+A Tenant uses an application-generated UUID independent of provider identities. `platform_connection` uses its own UUID, references `tenant(id)` with `ON DELETE CASCADE`, and globally constrains `(provider, external_account_id)`. One Tenant may have multiple Platform Connections. No Tenant or connection lifecycle state is implemented yet.
 
 ## Isolation and provenance
 
@@ -16,7 +16,7 @@ Conceptually, reads and writes use:
 tenant_id + connection_id + external_object_id
 ```
 
-They must not use `external_object_id` alone. Event idempotency and deduplication follow the same provider/connection scope. Storage constraints and indexes should enforce important invariants when the schema is designed.
+They must not use `external_object_id` alone. Event idempotency and deduplication follow the same provider/connection scope. The foundation schema enforces Tenant foreign keys, provider/account uniqueness, and tenant/module entitlement uniqueness. The first provider-backed business table must additionally enforce matching Tenant and connection ownership in the same migration slice.
 
 Tenant context must be explicit before business processing, including background jobs. It must not be accepted from an untrusted external identifier without resolving the Platform Connection. Authorization, caching, logging, metrics, exports, administration, and tests must preserve the same isolation boundary.
 
@@ -32,4 +32,4 @@ Tenant ownership must make it possible to identify and delete all relevant custo
 - include non-sensitive tenant and connection identifiers in operational context while excluding secrets and unnecessary business payloads; and
 - audit privileged access where appropriate.
 
-No tenant persistence or authorization mechanism exists yet; these requirements are for Private Beta implementation.
+Tenant persistence and negative isolation tests exist for the foundation. User authorization, tenant-aware public endpoints, provider ingress, jobs, caches, exports, and administration do not exist yet and remain Private Beta requirements.

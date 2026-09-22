@@ -2,7 +2,7 @@
 
 ## Status legend
 
-- **Exists today:** HubSpot project metadata and the accepted feasibility probes under `spike/`.
+- **Exists today:** HubSpot project metadata, accepted feasibility probes under `spike/`, and the Java/PostgreSQL Platform Core foundation under `backend/`.
 - **Target Beta:** required architecture direction; not yet implemented.
 - **TBD:** an implementation decision intentionally deferred until the relevant feature or infrastructure task.
 
@@ -18,7 +18,7 @@ Provider adapters                         [Target Beta]
         |
         v
 Platform / application boundaries         [Target Beta]
-  Tenant | Platform Connection | Entitlements
+  Tenant | Platform Connection | Product Module identity | Entitlements
   authenticated event ingress | durable jobs
   security | configuration | observability
         |
@@ -31,7 +31,7 @@ Module-owned persistence ports            [Target Beta]
         |
         v
 Infrastructure adapters                   [Target Beta]
-  PostgreSQL | job mechanism TBD | monitoring vendors TBD
+  PostgreSQL (foundation implemented) | job mechanism TBD | monitoring vendors TBD
 ```
 
 The arrows show dependency flow into application-owned contracts and business behavior. Domain/application code must not depend outward on HubSpot clients, webhook DTOs, HTTP, JPA/PostgreSQL implementations, hosting APIs, monitoring vendors, or billing-provider APIs.
@@ -40,7 +40,7 @@ The arrows show dependency flow into application-owned contracts and business be
 
 The target is one codebase and a modular monolith with explicit internal ownership. The same artifact may support logically separate API and background-worker roles so asynchronous work is not forced into request threads and each role can scale independently later. Physical separation is not a Beta default.
 
-PostgreSQL is the expected initial database. Public endpoints require HTTPS. Managed infrastructure, backups, restore verification, secret/key management, event/job technology, deployment topology, hosting provider, database provider, and region are TBD.
+PostgreSQL 18 is the implemented initial database, with Liquibase-managed schema and JPA confined to persistence adapters. Public endpoints require HTTPS. Managed infrastructure, backups, restore verification, secret/key management, event/job technology, deployment topology, hosting provider, database provider, and region are TBD.
 
 ## Core request/event context
 
@@ -58,4 +58,6 @@ Customer ownership is never inferred from an external business-object ID. Provid
 
 ## Current implementation boundary
 
-No production tenant, connection, entitlement, webhook-processing, module, persistence, API/worker, security, or observability implementation exists yet. Exact packages, ports, schemas, and runtime mechanisms are deliberately not designed in P.0.
+The single Spring Boot application under `backend/` implements internal Tenant identity, Platform Connection identity and account resolution, closed Product Module identity, tenant/module entitlements, PostgreSQL persistence, and boundary tests. Packages are rooted at `com.udmconsulting`, with Platform Core capabilities under `platform.*` and JPA adapters under each capability's `infrastructure.persistence` package.
+
+No HubSpot adapter, credential storage, webhook processing, Line Item Watch business behavior, public API, job mechanism, API/worker role split, production deployment, or production observability integration exists yet.

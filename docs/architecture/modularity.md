@@ -15,6 +15,8 @@ The design goal is **hard boundaries, simple runtime**. Architectural separabili
 - Cross-module contracts or events are introduced only for a demonstrated collaboration requirement.
 - Core business rules stay out of controllers, webhook handlers, provider adapters, and persistence adapters.
 
+The implemented Java root is `com.udmconsulting`. Platform Core capabilities use `platform.tenant`, `platform.connection`, `platform.module`, and `platform.entitlement`; each persistence adapter sits below its owner in `infrastructure.persistence`. Product implementations will use `modules.<module>` and provider adapters will use `integrations.<provider>` only when real behavior exists. ArchUnit enforces the currently meaningful inward-dependency and cycle rules.
+
 ## Activation
 
 Platform Core determines whether a tenant is entitled to a module. A module consumes a capability decision and remains independent of whether entitlement came from a beta grant, trial, contract, manual activation, or future billing system. See [ADR 0002](../adr/0002-tenant-entitlements.md).

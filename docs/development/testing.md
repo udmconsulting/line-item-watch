@@ -6,7 +6,9 @@
 - **Integration tests:** provider clients/mappers, signature validation, persistence adapters, migrations, configuration, and external boundary behavior.
 - **Focused end-to-end tests:** only critical customer and operational flows where the assembled behavior adds material confidence.
 
-Avoid tests written only to increase coverage. Frameworks and exact commands are TBD until implementation establishes them.
+Avoid tests written only to increase coverage. The backend uses JUnit 6, Spring Boot test support, PostgreSQL 18.6 through Testcontainers, and ArchUnit. Run the full suite from `backend/` with `./mvnw verify`; Docker is required for persistence tests. H2 or mocked PostgreSQL behavior must not replace tests of migrations, constraints, or PostgreSQL-specific queries.
+
+The foundation suite verifies Liquibase startup, Hibernate validation, Tenant and connection persistence, provider/account uniqueness, foreign keys, multiple connections per Tenant, tenant-scoped connection lookup, idempotent entitlements, cross-tenant entitlement isolation, deletion cascades, and package dependency rules.
 
 ## Required critical coverage
 

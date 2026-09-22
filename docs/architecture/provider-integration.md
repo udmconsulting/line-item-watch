@@ -8,7 +8,7 @@ Provider-specific behavior remains provider-specific when a shared model would e
 
 ## Identity and tenant resolution
 
-An internal **Tenant** is independent of an external account. A **Platform Connection** associates a tenant with a provider, external provider account identity, internal connection identity, and lifecycle/status. The model must allow multiple providers and potentially multiple accounts of one provider per tenant.
+An internal **Tenant** is independent of an external account. A **Platform Connection** currently associates a Tenant with an application-generated UUID, an owned provider value, and a non-blank external provider account identity. `HUBSPOT` is the only implemented provider value. A Tenant may own multiple connections, while `(provider, external_account_id)` is globally unique so provider-account resolution identifies exactly one connection and Tenant. Connection lifecycle/status is deferred until OAuth and disconnect behavior give it concrete semantics.
 
 HubSpot `portalId` must not be used as the internal tenant ID. Inbound traffic is validated and resolved in this order:
 
@@ -20,7 +20,7 @@ provider + external account identity
   -> business processing
 ```
 
-Provider-backed customer records retain sufficient provenance: `tenant_id`, `connection_id`, and external object or event identity conceptually. Exact fields and schema are TBD. External IDs and deduplication keys are not globally unique and must be connection/provider scoped.
+Provider-backed customer records will retain `tenant_id`, `connection_id`, and external object or event identity as appropriate. The foundation contains no provider-backed business records yet. When the first such table is added, its migration must prevent pairing a Tenant with another Tenant's Platform Connection through an appropriate supporting uniqueness and composite foreign-key structure. External IDs and deduplication keys are not globally unique and must be connection/provider scoped.
 
 ## HubSpot adapter requirements
 
@@ -46,4 +46,4 @@ One operation does not imply the other. Follow the separate checklists in [Addin
 
 ## Decisions deferred
 
-Exact application ports, authentication implementation, mapping types, package structure, credentials/key management, future providers, and any provider-specific reconciliation limits remain TBD until a concrete implementation task requires them.
+Authentication implementation, provider mappings, credentials/key management, future providers, and provider-specific reconciliation limits remain TBD. Future HubSpot code belongs under `com.udmconsulting.integrations.hubspot` and must depend inward on focused application boundaries; no provider adapter package exists yet.

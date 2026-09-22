@@ -4,10 +4,12 @@ This is an engineering posture document, not marketing or a compliance claim.
 
 ## Current / proven
 
-- The repository contains no production application or customer-data store.
+- The backend foundation persists only application-generated Tenant and Platform Connection IDs, provider/external account identity, Product Module entitlement, and creation/enabled timestamps in PostgreSQL.
+- Tenant and entitlement foreign keys, provider/account uniqueness, tenant/module uniqueness, tenant-scoped connection lookup, and negative isolation cases are covered by PostgreSQL integration tests.
+- No OAuth credentials, HubSpot business objects, webhook payloads, user data, billing data, public endpoints, or provider adapters are implemented.
 - The feasibility probes require credentials through environment variables rather than committed literals.
 - The accepted spike demonstrated read/history and webhook feasibility; it did not establish production security controls.
-- Architectural boundaries, tenant isolation requirements, credential rules, and data-minimization expectations are documented in P.0.
+- Architectural boundaries are checked with ArchUnit, while broader Private Beta security and operational controls remain requirements rather than implemented claims.
 
 No certification or regulatory compliance is claimed.
 
