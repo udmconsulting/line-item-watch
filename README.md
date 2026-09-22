@@ -2,7 +2,20 @@
 
 Line Item Watch is the first Product Module of a planned modular B2B SaaS. Its initial purpose is to give HubSpot users a useful audit history for Deal Line Item changes: what changed, old and new values, when, who where available, and creation/removal behavior.
 
-The repository currently contains accepted HubSpot feasibility probes and the P.0 governance/documentation baseline. Production application functionality has not been implemented.
+The repository contains the accepted HubSpot feasibility probes, the P.0 governance baseline, and the first production backend foundation. The foundation provides internal Tenant, Platform Connection, Product Module, and tenant/module entitlement identities with PostgreSQL persistence. HubSpot OAuth, webhooks, Line Item Watch processing, and customer-facing APIs are not implemented yet.
+
+## Backend foundation
+
+The single Maven module under `backend/` uses Java 25, Spring Boot 4.1.1, PostgreSQL 18.6, Liquibase, Spring Data JPA, Testcontainers, and ArchUnit. From the repository root:
+
+```sh
+docker compose up -d postgres
+cd backend
+SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
+./mvnw verify
+```
+
+The local profile contains only explicit non-production database credentials. Non-local database configuration is supplied through the environment; see [Local development](docs/development/local-development.md).
 
 ## Project documentation
 

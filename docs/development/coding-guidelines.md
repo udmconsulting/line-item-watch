@@ -39,7 +39,9 @@ Do not silently swallow failures. Separate domain outcomes from technical failur
 
 ## Persistence and migrations
 
-Use versioned schema migrations; manual production drift is forbidden. Add constraints and indexes for important invariants where practical. Every customer-owned persisted record carries tenant ownership. Provider-backed records also retain necessary connection provenance. Exact schema and migration tooling are TBD.
+Use Liquibase as the only schema-management mechanism, with an ordered YAML manifest and human-reviewable formatted SQL changesets under `backend/src/main/resources/db/changelog`. Hibernate uses `ddl-auto=validate`; `create`, `create-drop`, `update`, and `schema.sql` are forbidden for schema management. Add constraints and indexes for important invariants where practical. Every customer-owned persisted record carries tenant ownership. Provider-backed records also retain necessary connection provenance.
+
+Domain and application types must not carry JPA annotations. JPA entities, Spring Data repositories, PostgreSQL-specific queries, and explicit mappings remain within the owning capability's `infrastructure.persistence` package. Do not introduce generic base entities or repositories.
 
 ## Documentation as Definition of Done
 

@@ -4,6 +4,8 @@ These are separate extension operations. Complete the applicable checklist durin
 
 ## A. Adding a Product Module
 
+Product Module identity is the closed Platform Core enum `com.udmconsulting.platform.module.domain.ProductModule`. Adding a value requires both a code change and a Liquibase migration that updates the `tenant_entitlement.product_module` check constraint. This explicit extension point is not a module registry or plugin framework.
+
 - [ ] Define a stable module identity and its customer-visible business responsibility.
 - [ ] Confirm the requirement is not already owned by Platform Core or an existing module.
 - [ ] Define the tenant/module entitlement the platform will evaluate; keep pricing-plan names out of module logic.
@@ -20,6 +22,8 @@ These are separate extension operations. Complete the applicable checklist durin
 Do **not** directly access another module's persistence, hard-code subscription plans, copy provider/platform infrastructure, create a new tenant/auth system, or create a new service/runtime by default.
 
 ## B. Adding an external provider
+
+Provider identity is the closed Platform Core enum `com.udmconsulting.platform.connection.domain.Provider`. Adding a value requires both a code change and a Liquibase migration that updates the `platform_connection.provider` check constraint.
 
 - [ ] Define provider identity and which concrete existing business use case it serves.
 - [ ] Add Platform Connection support for the provider and document external account identity and lifecycle.

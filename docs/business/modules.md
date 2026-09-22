@@ -4,7 +4,7 @@
 
 A **Product Module** is an independently identifiable customer capability with its own business responsibility. It owns its domain and application logic, module-specific state, APIs or UI exposure, tests, and operational behavior. Activation is determined by a tenant/module entitlement, not by pricing-plan names embedded in product logic.
 
-`LINE_ITEM_WATCH` is currently the only defined module. It will own the reconstruction and presentation of commercial item changes, including creation and removal behavior. No additional modules are specified.
+`LINE_ITEM_WATCH` is currently the only defined module. Its identity is implemented as the closed Platform Core enum `com.udmconsulting.platform.module.domain.ProductModule`; adding a module requires an explicit code change and schema migration. The module will own the reconstruction and presentation of commercial item changes, including creation and removal behavior, but that behavior is not implemented yet. No additional modules are specified.
 
 ## Platform Core and Product Module responsibilities
 
@@ -17,6 +17,8 @@ The Platform Core supplies capabilities shared across products:
 - configuration, security, observability, and operational lifecycle.
 
 A Product Module consumes these capabilities. It must not implement tenant resolution, billing, provider credential storage, or duplicate webhook infrastructure.
+
+The implemented entitlement foundation uses row presence for an enabled `(Tenant, ProductModule)` pair and absence for disabled. It deliberately records no plan, billing source, trial, expiry, or usage state.
 
 ## Independence rules
 

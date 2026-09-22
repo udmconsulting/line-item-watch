@@ -9,11 +9,11 @@ The same codebase/artifact may expose logical runtime roles:
 - **API:** public HTTPS endpoints and synchronous application interactions;
 - **worker:** durable asynchronous provider, baseline, event, and reconciliation work.
 
-Logical roles permit independent scaling or failure isolation later without requiring separate services now. Exact role configuration and process topology are TBD.
+Logical roles permit independent scaling or failure isolation later without requiring separate services now. The implemented foundation is one non-web Spring Boot 4.1.1 artifact built with Java 25 and Maven. It has no API/worker role configuration; that logical split remains deferred until asynchronous processing exists.
 
 ## Infrastructure expectations
 
-- PostgreSQL is the expected initial database.
+- PostgreSQL 18 is the implemented database baseline. Liquibase is the sole schema-management mechanism, and Hibernate validates rather than creates or updates the schema.
 - Every public endpoint requires HTTPS/TLS.
 - Secrets and OAuth credentials require managed protection and encryption at rest.
 - Production data requires managed backups, defined retention, and verified restores.
@@ -23,4 +23,4 @@ Logical roles permit independent scaling or failure isolation later without requ
 
 ## Deferred decisions
 
-Hosting provider, database provider, region, network topology, job mechanism, secret/key-management service, observability vendors, backup retention, RPO, RTO, capacity, and deployment pipeline are TBD. These decisions are due before the affected production capability or Private Beta environment is approved; they must not be inferred from this direction document.
+Docker Compose supplies PostgreSQL 18.6 for local development only. Hosting provider, managed database provider, region, network topology, job mechanism, secret/key-management service, observability vendors, backup retention, RPO, RTO, capacity, and deployment pipeline are TBD. These decisions are due before the affected production capability or Private Beta environment is approved; local Compose is not a production topology decision.

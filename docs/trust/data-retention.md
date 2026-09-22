@@ -16,7 +16,7 @@ Stop provider processing, invalidate or revoke credentials where supported, remo
 
 ### Tenant deletion
 
-The system must identify all tenant-owned data across modules, Platform Connections, credentials, events/jobs, logs where feasible, and backups. The deletion workflow, verification evidence, exceptions required by law/contract, and completion timeline are TBD.
+The foundation database cascades deletion of a Tenant row to its Platform Connections and entitlements, and integration tests verify those constraints. No customer-facing deletion operation exists yet. The complete workflow must identify all future module data, credentials, events/jobs, logs where feasible, and backups. Verification evidence, exceptions required by law/contract, and completion timeline are TBD.
 
 ### Credentials
 

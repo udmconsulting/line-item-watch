@@ -1,0 +1,8 @@
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    url: jdbc:postgresql://localhost:5433/line_item_watch_local
+    username: line_item_watch_local
+    password: local_only_not_for_production
