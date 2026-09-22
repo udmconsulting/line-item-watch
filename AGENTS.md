@@ -1,136 +1,110 @@
 # AGENTS.md
 
-This file provides guidance to AI coding agents when working on HubSpot components
+This is the canonical execution contract for coding agents in this repository. Follow it together with the linked project documentation. If tool-specific guidance conflicts with this file, this file and accepted ADRs take precedence.
 
-IMPORTANT: IF THE 'HubSpot' MCP SERVER IS INSTALLED USE THE TOOLS BEFORE TRYING TO MANUALLY USE CLI COMMANDS OR BEFORE TRYING TO DO ANYTHING WITH HUBSPOT ASSETS
+## Current project state
 
-## HubSpot Project Information
-- The project configuration is in the `hsproject.json` file
-- A directory is considered a part of the project if it or a directory above it contains a `hsproject.json` file
-- The project src directory is defined in the `srcDir` field in the `hsproject.json`
-- The project's platform version is defined in `platformVersion` in the `hsproject.json`
-- The `platformVersion` determines what features the project has access to as well as the shape of the configuration files
+- `LINE_ITEM_WATCH` is the only defined Product Module.
+- HubSpot is the first external provider; it is not the business domain.
+- The accepted feasibility spike is under `spike/`; do not repeat destructive/live tests without explicit authorization.
+- P.0 contains governance and documentation only. Do not infer that target Beta capabilities already exist.
+- Read [product overview](docs/business/product-overview.md), [Beta scope](docs/business/beta-v1.md), [architecture overview](docs/architecture/system-overview.md), and the relevant development/trust documents before implementation.
 
-## npm packages
-### `@hubspot/ui-extensions`
-- In the `@hubspot/ui-extensions` npm package, only the component properties defined by the component are valid.  `style` properties are not valid
+## Before implementation
 
-## Component Information
-### General
-- Component configuration files must end with `-hsmeta.json`
-- The `uid` field in the `-hsmeta.json` files must be unique with the project
-- The `type` field in the `-hsmeta.json` files defines the type of the component
-- Components can not be in nested subdirectories, only the specified directories in their corresponding component rules.
-- Example components can be found in https://github.com/HubSpot/hubspot-project-components.  The directories are split up by platform version and follow this format `${platformVersion}/components`
-- All component subdirectories must be in the project source directory
+Every task must:
 
-### app component
-- There can only be one `app` component
-- `app` component must be in the `app` directory
-- If the `config.distribution` field is set to `marketplace`, the only valid `config.auth.type` value is `oauth`
+1. inspect the current Git branch, status, HEAD, upstream, and recent history;
+2. preserve unrelated user changes;
+3. read the relevant business, architecture, development, ADR, and trust documentation;
+4. identify the owning Product Module and affected Platform Core capabilities;
+5. identify affected provider adapters, tenant/security/data boundaries, contracts, configuration, and data model;
+6. decide whether architecture actually changes—never change it incidentally; and
+7. establish the available build, test, lint, formatting, validation, and secret-scan commands without inventing results.
 
-### card
-- `card` components must be in the `app/cards` directory
-- The global `window` object is not available in the `card` component
-- Cannot use `window.fetch`, and instead must use the `hubspot.fetch` function provided by the `@hubspot/ui-extensions` npm package.  Any urls called with the `hubspot.fetch` function must be added to the `config.permittedUrls.fetch` array in the `app` component's hsmeta.json file
-- Only components exported from the `@hubspot/ui-extensions` npm package can be used in `card` components
-#### Available Hooks for Card Components
+## Architecture and implementation rules
 
-Prefer hooks over `hubspot.fetch` — use hooks to access CRM data and extension context before falling back to `hubspot.fetch` for external HTTP requests. Hooks must be called at the component level, not inside conditionals or loops. The list below may not be exhaustive — refer to the [hooks documentation](https://developers.hubspot.com/docs/apps/developer-platform/add-features/ui-extensions/ui-extensions-sdk/hooks.md) as the source of truth for all available hooks and their parameters.
+- Preserve the modular monolith and explicit Platform Core/Product Module ownership.
+- Keep dependency direction inward. Business/application logic must not depend directly on HubSpot clients/DTOs, OAuth mechanics, HTTP, PostgreSQL/JPA implementations, hosting, monitoring, or billing vendors.
+- Keep core business rules out of controllers and adapters. Use focused application-owned boundaries based on real use cases; avoid speculative abstractions.
+- A module owns its logic, persistence, APIs/UI, tests, and operational behavior. It must not directly access another module's tables or repositories.
+- Do not create duplicate event ingress, credentials, tenant/auth, billing, or observability infrastructure inside a module.
+- Enforce module activation through tenant/module entitlements; never hard-code pricing-plan names in product logic.
+- Do not create a new microservice/runtime by default. API and worker separation is initially logical.
+- Schema changes require versioned migrations and appropriate constraints/indexes. No manual production drift.
 
-**Universal hooks** (available across all extension points):
-- `useExtensionApi` - Access both context and actions from a single hook
-- `useExtensionContext` - Access contextual information about the extension environment (portal, user, extension metadata)
-- `useExtensionActions` - Access all available actions for the current extension point
-- `useCrmSearch` - Search CRM records
-- `useDebounce` - Debounce a rapidly-changing value
+## Provider and tenant rules
 
-**CRM-specific hooks** (available in `crm.record.tab`, `crm.record.sidebar`, `crm.preview`, `helpdesk.sidebar` extension points):
-- `useCrmProperties` - Fetch properties from the current CRM record
-- `useAssociations` - Fetch associated CRM records
+- Preserve provider adapter boundaries. Provider DTOs and externally controlled values must be validated and mapped before entering business logic.
+- Resolve external provider account -> Platform Connection -> internal Tenant before customer business processing.
+- Never use HubSpot `portalId` as the internal tenant ID and never infer ownership from an external business-object ID.
+- Every provider-backed customer record retains tenant ownership and necessary connection provenance. External object/event IDs and idempotency keys are scoped to provider/connection context.
+- Use current supported provider APIs; do not silently fall back to legacy behavior.
+- Document provider identity, external account identity, permissions/scopes, semantics, errors/rate limits, and security/privacy implications.
+- Do not introduce a universal CRM model, generic provider factory, or shared provider interface until a concrete shared use case justifies it.
+- For HubSpot Line Item Watch, webhook delivery is a signal; provider object/history APIs are authoritative reconstruction where available. Do not assume event ordering.
+- Deletion uses accepted MODEL B: initial baseline plus latest known snapshot. Do not redesign it without new evidence and an explicit decision.
 
-#### Available Actions for Card Components
+## Coding and configuration rules
 
-Access actions via the `useExtensionActions` hook or the `actions` parameter from `hubspot.extend()`. The list below may not be exhaustive — refer to the [actions documentation](https://developers.hubspot.com/docs/apps/developer-platform/add-features/ui-extensions/ui-extensions-sdk/actions.md) as the source of truth for all available actions and their parameters.
+- Use clear names, cohesive units, explicit ownership, and no hidden side effects or duplicated business rules.
+- Use typed, validated, environment-aware configuration; fail fast on mandatory missing values where appropriate.
+- Use enums/value objects for closed owned sets when useful. Do not force provider-controlled strings into brittle enums; handle unknown values safely.
+- Replace reusable owned limits with named constants or configuration according to ownership. Keep test values in explicit fixtures.
+- Do not silently swallow failures. Separate domain outcomes from technical failures, retry only retryable failures, preserve idempotency, and expose terminal failures.
+- Add meaningful tests at the smallest appropriate level. Include tenant isolation, retries/idempotency, provider/persistence boundaries, and security-sensitive behavior when relevant.
+- Add structured, privacy-aware observability and operator alerts for operationally significant behavior.
 
-**Universal actions** (available across all extension points):
-- `addAlert` - Display an alert banner
-- `reloadPage` - Reload the current page
-- `copyTextToClipboard` - Copy text to clipboard; requires explicit user interaction
-- `closeOverlay` - Close an open overlay or modal by its id
-- `openIframeModal` - Open a URL in an iframe modal
+## Security and privacy review
 
-**CRM-specific actions** (available in `crm.record.tab`, `crm.record.sidebar`, `crm.preview`, `helpdesk.sidebar` extension points):
-- `fetchCrmObjectProperties` - Fetch property values from the current CRM record
-- `refreshObjectProperties` - Refresh CRM record properties in the UI without a full page reload
-- `onCrmPropertiesUpdate` - Subscribe to UI-level changes to CRM properties
+For every implementation task, answer:
 
-#### Context Object
+- Does it access, store, or transmit customer data, and is that data tenant-scoped?
+- Is every collected/stored field necessary, with connection provenance where required?
+- Does it introduce credentials, secrets, external input, or a new vendor/subprocessor?
+- Does it change retention, deletion, backup, export, or uninstall behavior?
+- Does it change logs, monitoring, or error reporting, and could they expose customer data?
+- Does it require an operational alert, incident response, or privileged access?
+- Which data inventory, security, retention, subprocessor, or legal-readiness documents must change?
 
-Access context via the `useExtensionContext` hook or the `context` parameter from `hubspot.extend()`. The list below may not be exhaustive — refer to the [context documentation](https://developers.hubspot.com/docs/apps/developer-platform/add-features/ui-extensions/ui-extensions-sdk/context.md) as the source of truth for all available context fields.
+Never commit, log, expose, or document secret values or OAuth tokens. Require HTTPS for public production endpoints, webhook authenticity validation, least privilege, encryption at rest, and managed credential lifecycle.
 
-**Universal fields** (available on all extension points):
-- `location` - Extension point identifier
-- `portal.id` / `portal.timezone` / `portal.dataHostingLocation` - Account info
-- `user.id` / `user.email` / `user.firstName` / `user.lastName` / `user.locale` / `user.language` / `user.teams` / `user.permissions` - User info
-- `variables` - Project configuration variables
+Never claim without explicit evidence: GDPR compliant, SOC 2 compliant, ISO 27001 compliant, HIPAA compliant, certified, zero risk, or secure by definition.
 
-**CRM-specific fields** (available in `crm.record.tab`, `crm.record.sidebar`, `crm.preview`, `helpdesk.sidebar` extension points):
-- `crm.objectId` - Current CRM record's ID
-- `crm.objectTypeId` - Record type ID
-- `extension.appId` / `extension.appName` / `extension.cardTitle` - Extension metadata
+## Documentation Definition of Done
 
-#### Logging
+Update documentation in the same task when changing business/module behavior, architecture, provider integration, boundaries, API, data model, configuration, deployment, operations, security/privacy, onboarding, retention, subprocessors, or extension mechanisms. Add an ADR for material architecture decisions. Document current behavior accurately and use `TBD` rather than inventing decisions.
 
-Use the `logger` API to send custom log messages. In local development mode, logs go to the browser console only; in production they are sent to HubSpot and viewable via `hs project logs`. The list below may not be exhaustive — refer to the [logging documentation](https://developers.hubspot.com/docs/apps/developer-platform/add-features/ui-extensions/ui-extensions-sdk/logging.md) as the source of truth for all available logging methods.
+## HubSpot project constraints
 
-- `logger.info` - Informational messages
-- `logger.debug` - Debug messages
-- `logger.warn` - Warning messages
-- `logger.error` - Error messages
+- The root `hsproject.json` defines `srcDir` and `platformVersion`; current platform version is `2026.09`.
+- Component configuration files end in `-hsmeta.json`; each `uid` must be unique, and components belong in the valid directory for their `type` under the configured source directory.
+- An app component belongs in `src/app`; only one app component is allowed. Marketplace distribution requires OAuth.
+- HubSpot UI extensions use supported `@hubspot/ui-extensions` APIs. Do not assume browser globals or arbitrary components/styles; card/settings external fetch URLs must be permitted in app configuration.
+- A HubSpot webhooks component is provider infrastructure, not a Product Module. Follow current platform restrictions and shared-ingress architecture.
+- Prefer an installed HubSpot integration tool over manual CLI changes to HubSpot assets. Uploads, deployments, account changes, authentication, and live provider-data changes require explicit authorization.
+- Consult current official HubSpot documentation when implementing platform components; generated sample guidance is not a substitute for version-specific documentation.
 
-### app-event
-- `app-event` components must be in the `app/app-events` directory
-### app-object
-- `app-object` components must be in the `app/app-object` directory
+## Before completion
 
-### app-function
-- `app-function` components must be in the `app/functions` directory
-- `app-function` components are not available when `config.distribution` is set to `marketplace` in the `app` component `-hsmeta.json` file
+Report:
 
-# settings
-- There can only be one `settings` component
-- `settings` components must be in the `app/settings` directory
-- The global `window` object is not available in the `settings` component
-- Cannot use `window.fetch`, and instead must use the `hubspot.fetch` function provided by the `@hubspot/ui-extensions` npm package.  Any urls called with the `hubspot.fetch` function must be added to the `config.permittedUrls.fetch` array in the `app` component's hsmeta.json file
-- Only components exported from the `@hubspot/ui-extensions` npm package can be used in `settings` components
-- React Components from `@hubspot/ui-extensions/crm` cannot be used in `settings` components
+- tests and validation run, including unavailable or intentionally skipped checks;
+- build, lint, and formatting results where available;
+- `git diff --check` and secret-scan results;
+- files changed and any migrations;
+- documentation changes and architecture impact;
+- security/privacy and tenant-isolation impact;
+- new configuration and external dependencies/subprocessors;
+- branch, status, HEAD, upstream, changed/untracked files; and
+- whether the work is commit-ready, with reason.
 
-# scim
-- There can only be one `scim` component
-- `scim` components must be in the `app/scim` directory
+Never document a check as passing unless it ran successfully.
 
-# webhooks
-- There can only be one `webhooks` component.
-- `webhooks` components must be in the `app/webhooks` directory
-- `webhooks` components can only be in projects where `config.distribution` is private and `config.auth.type` is `static`
+## Git rules
 
-### workflow-actions
-- `workflow-action` components must be in the `app/workflow-actions` directory
-
-## HubSpot CLI commands
-- All the commands and subcommands have a `--help` argument that provides details on the command and it's arguments
-- The help output is standard yargs output
-- The commands for working with projects in HubSpot are subcommands of `hs project`
-- Debugging flag that can be added to `hs` commands and subcommands: `--debug`
-- Debugging problems with CLI installation: `hs doctor`
-- `hs project open` will open the current project page in the browser
-- `hs init` is required to set up the hubspot configuration file
-- `hs auth` will authenticate a new account.  This will require a user to open a browser and paste a token in a CLI prompt.
-- All the commands for managing HubSpot accounts in the CLI are subcommands of `hs account`
-
-## General
-- Follow existing patterns in the codebase
-- Use proper component structure based on component `type` in the `-hsmeta.json` file
-- Ensure configuration files follow HubSpot naming conventions
-- Always validate that components are placed in correct directories
+- Use one focused branch per task and preserve unrelated changes.
+- Do not push or merge without explicit authorization.
+- Do not rebase, reset, force, amend unrelated history, or rewrite user work without explicit authorization.
+- Commit only when the task explicitly permits it.
+- Never commit secrets, temporary credentials, build output, temporary webhook/deployment components, or IDE artifacts.
