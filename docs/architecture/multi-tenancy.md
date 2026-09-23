@@ -4,7 +4,7 @@
 
 The product is a multi-tenant SaaS. An internal **Tenant** owns customer data and lifecycle. A **Platform Connection** belongs to a Tenant and records an internal connection identity, provider, external provider account identity, and Tenant ownership. Provider identities do not define tenants.
 
-A Tenant uses an application-generated UUID independent of provider identities. `platform_connection` uses its own UUID, references `tenant(id)` with `ON DELETE CASCADE`, and globally constrains `(provider, external_account_id)`. One Tenant may have multiple Platform Connections. No Tenant or connection lifecycle state is implemented yet.
+A Tenant uses an application-generated UUID independent of provider identities. `platform_connection` uses its own UUID, references `tenant(id)` with `ON DELETE CASCADE`, and globally constrains `(provider, external_account_id)`. One Tenant may have multiple Platform Connections. Connections have `ACTIVE`, `REAUTH_REQUIRED`, or `DISCONNECTED` state; pre-OAuth rows migrate to `DISCONNECTED`.
 
 ## Isolation and provenance
 
@@ -32,4 +32,4 @@ Tenant ownership must make it possible to identify and delete all relevant custo
 - include non-sensitive tenant and connection identifiers in operational context while excluding secrets and unnecessary business payloads; and
 - audit privileged access where appropriate.
 
-Tenant persistence and negative isolation tests exist for the foundation. User authorization, tenant-aware public endpoints, provider ingress, jobs, caches, exports, and administration do not exist yet and remain Private Beta requirements.
+Tenant persistence and negative isolation tests exist. OAuth callback identity comes only from the validated provider exchange, while internal uninstall requires both Tenant and connection identity. Customer-user authorization, tenant-aware administration, provider webhooks, jobs, caches, exports, and a public disconnect surface do not exist yet and remain Private Beta requirements.

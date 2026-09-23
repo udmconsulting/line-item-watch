@@ -34,3 +34,7 @@ Private Beta should let an external customer install and connect the product, ac
 ## Success and readiness
 
 Commercial Beta success criteria, service levels, pricing, retention periods, hosting, and exact UX remain TBD. Private Beta must not begin until the required security, observability, recovery, deletion, and operator-alerting controls are implemented and verified; this document does not assert that they exist today.
+
+## Current implementation progress
+
+HubSpot OAuth install/callback, account-to-Tenant/Platform Connection resolution, encrypted refresh-credential storage, on-demand refresh, connection lifecycle state, `LINE_ITEM_WATCH` entitlement activation, and an internal uninstall service are implemented. A customer-facing disconnect surface, recurring HubSpot reads, webhook ingress, baseline/snapshot processing, audit reconstruction, and Deal UI remain future slices.

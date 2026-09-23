@@ -32,4 +32,4 @@ Product-market fit, willingness to pay, pricing, onboarding conversion, customer
 
 ## Current status
 
-Only feasibility code and governance documentation exist. The target Private Beta architecture and scope are documented, but production application capabilities have not been implemented.
+The Platform Core foundation and HubSpot OAuth installation/credential lifecycle are implemented. The target Private Beta architecture and remaining scope are documented; recurring provider reads, webhook processing, Line Item Watch audit behavior, and customer-facing Deal UI are not yet implemented.

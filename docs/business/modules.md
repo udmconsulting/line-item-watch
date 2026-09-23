@@ -18,7 +18,7 @@ The Platform Core supplies capabilities shared across products:
 
 A Product Module consumes these capabilities. It must not implement tenant resolution, billing, provider credential storage, or duplicate webhook infrastructure.
 
-The implemented entitlement foundation uses row presence for an enabled `(Tenant, ProductModule)` pair and absence for disabled. It deliberately records no plan, billing source, trial, expiry, or usage state.
+The implemented OAuth installation flow enables `LINE_ITEM_WATCH` by creating the `(Tenant, ProductModule)` entitlement. Row presence means enabled and absence means disabled; no plan, billing source, trial, expiry, or usage state is recorded.
 
 ## Independence rules
 

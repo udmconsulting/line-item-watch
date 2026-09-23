@@ -8,7 +8,9 @@
 
 Avoid tests written only to increase coverage. The backend uses JUnit 6, Spring Boot test support, PostgreSQL 18.6 through Testcontainers, and ArchUnit. Run the full suite from `backend/` with `./mvnw verify`; Docker is required for persistence tests. H2 or mocked PostgreSQL behavior must not replace tests of migrations, constraints, or PostgreSQL-specific queries.
 
-The foundation suite verifies Liquibase startup, Hibernate validation, Tenant and connection persistence, provider/account uniqueness, foreign keys, multiple connections per Tenant, tenant-scoped connection lookup, idempotent entitlements, cross-tenant entitlement isolation, deletion cascades, and package dependency rules.
+The suite verifies Liquibase/Hibernate startup, foundation isolation and constraints, OAuth state hashing/expiry/replay/bounded cleanup, AES-GCM authenticated encryption and tamper rejection, current `2026-09` HTTP paths/forms, hardened fixed MVC outcomes, install/reinstall, scope/account validation, entitlement activation, encrypted-only persistence, on-demand refresh, generation compare-and-advance, wrong-Tenant rejection, and uninstall. PostgreSQL race tests cover ordinary generation advancement plus invalid-grant, replacement, scope-loss, and uninstall responses after credential deletion/reinstall.
+
+Live HubSpot acceptance is intentionally opt-in and is not part of Maven verification. It requires an approved isolated account, environment-supplied secrets, matching callback configuration, and an explicit cleanup plan.
 
 ## Required critical coverage
 

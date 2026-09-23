@@ -29,3 +29,5 @@ Errors must be sanitized before they reach logs or monitoring services. High-car
 ## Operational behavior
 
 Failures must not be silently swallowed. Domain outcomes should be distinguishable from technical failures. Retries apply only to classified retryable failures, preserve idempotency, and end in an operator-visible terminal state after the configured policy is exhausted.
+
+The implemented OAuth slice logs successful installation with internal Tenant/connection context and external account identity, without token values. Best-effort revocation failure produces an operator-facing warning. Public OAuth errors use fixed non-reflective HTML and do not expose provider or exception text; internal exception types retain sanitized operational categories. No automatic OAuth retry loop is implemented.
