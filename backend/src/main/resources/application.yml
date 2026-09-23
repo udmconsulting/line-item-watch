@@ -1,8 +1,6 @@
 spring:
   application:
     name: line-item-watch-backend
-  main:
-    web-application-type: none
   datasource:
     url: ${DATABASE_URL}
     username: ${DATABASE_USERNAME}
@@ -17,3 +15,16 @@ spring:
           time_zone: UTC
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
+
+hubspot:
+  oauth:
+    client-id: ${HUBSPOT_OAUTH_CLIENT_ID}
+    client-secret: ${HUBSPOT_OAUTH_CLIENT_SECRET}
+    redirect-uri: ${HUBSPOT_OAUTH_REDIRECT_URI}
+    api-base-url: ${HUBSPOT_API_BASE_URL:https://api.hubapi.com}
+    authorization-base-url: ${HUBSPOT_AUTHORIZATION_BASE_URL:https://app.hubspot.com/oauth/authorize}
+    connect-timeout: ${HUBSPOT_CONNECT_TIMEOUT:5s}
+    read-timeout: ${HUBSPOT_READ_TIMEOUT:20s}
+  credentials:
+    key-id: ${HUBSPOT_CREDENTIAL_KEY_ID}
+    encryption-key: ${HUBSPOT_CREDENTIAL_ENCRYPTION_KEY}

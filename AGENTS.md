@@ -7,7 +7,7 @@ This is the canonical execution contract for coding agents in this repository. F
 - `LINE_ITEM_WATCH` is the only defined Product Module.
 - HubSpot is the first external provider; it is not the business domain.
 - The accepted feasibility spike is under `spike/`; do not repeat destructive/live tests without explicit authorization.
-- The production backend foundation under `backend/` implements Tenant, Platform Connection, Product Module identity, entitlements, and PostgreSQL persistence. OAuth, webhooks, module business behavior, asynchronous processing, public APIs, and production operations remain unimplemented.
+- The backend under `backend/` implements Tenant and Platform Connection identity/lifecycle, Product Module entitlements, PostgreSQL persistence, HubSpot OAuth install/callback, encrypted refresh credentials, on-demand refresh, and internal uninstall. Webhooks, module business behavior, asynchronous processing, customer administration/disconnect APIs, and production operations remain unimplemented.
 - Read [product overview](docs/business/product-overview.md), [Beta scope](docs/business/beta-v1.md), [architecture overview](docs/architecture/system-overview.md), and the relevant development/trust documents before implementation.
 
 ## Before implementation

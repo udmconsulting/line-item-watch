@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.udmconsulting.platform.connection.application.PlatformConnectionService;
 import com.udmconsulting.platform.connection.domain.ExternalAccountId;
+import com.udmconsulting.platform.connection.domain.ConnectionStatus;
 import com.udmconsulting.platform.connection.domain.PlatformConnection;
 import com.udmconsulting.platform.connection.domain.Provider;
 import com.udmconsulting.platform.entitlement.application.EntitlementService;
@@ -13,6 +14,7 @@ import com.udmconsulting.platform.tenant.application.TenantService;
 import com.udmconsulting.platform.tenant.domain.Tenant;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Base64;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,6 +39,14 @@ class PlatformPersistenceIntegrationTest {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
+        registry.add("hubspot.oauth.client-id", () -> "test-client-id");
+        registry.add("hubspot.oauth.client-secret", () -> "test-client-secret");
+        registry.add("hubspot.oauth.redirect-uri", () -> "http://localhost:8080/integrations/hubspot/oauth/callback");
+        registry.add("hubspot.oauth.api-base-url", () -> "http://localhost:9999");
+        registry.add("hubspot.oauth.authorization-base-url", () -> "https://app.hubspot.com/oauth/authorize");
+        registry.add("hubspot.credentials.key-id", () -> "test-key-1");
+        registry.add("hubspot.credentials.encryption-key", () ->
+                Base64.getEncoder().encodeToString(new byte[32]));
     }
 
     @Autowired
@@ -69,7 +79,9 @@ class PlatformPersistenceIntegrationTest {
                 "databasechangeloglock",
                 "tenant",
                 "platform_connection",
-                "tenant_entitlement");
+                "tenant_entitlement",
+                "oauth_install_state",
+                "connection_credential");
     }
 
     @Test
@@ -85,6 +97,49 @@ class PlatformPersistenceIntegrationTest {
                 Provider.HUBSPOT, new ExternalAccountId("account-one"))).contains(first);
         assertThat(connectionService.resolve(
                 Provider.HUBSPOT, new ExternalAccountId("account-two"))).contains(second);
+        assertThat(first.status()).isEqualTo(ConnectionStatus.DISCONNECTED);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT credential_generation FROM platform_connection WHERE id = ?",
+                Long.class, first.id().value())).isZero();
+    }
+
+    @Test
+    void credentialSchemaRejectsUnsupportedCryptoMetadataAndInvalidScopeArrays() {
+        Tenant tenant = tenantService.create();
+        PlatformConnection connection = connectionService.register(
+                tenant.id(), Provider.HUBSPOT, new ExternalAccountId("credential-constraints"));
+        jdbcTemplate.update(
+                "UPDATE platform_connection SET credential_generation = 1 WHERE id = ?",
+                connection.id().value());
+
+        String insert = """
+                INSERT INTO connection_credential
+                    (connection_id, cipher_version, key_id, nonce, ciphertext,
+                     granted_scopes, credential_generation)
+                VALUES (?, ?, ?, decode(repeat('00', 12), 'hex'),
+                        decode(repeat('00', 17), 'hex'), %s, 1)
+                """;
+
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                insert.formatted("ARRAY['scope']::text[]"), connection.id().value(), 2, "key-1"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                insert.formatted("ARRAY['scope']::text[]"), connection.id().value(), 1, " key-1"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        for (String invalidScopes : new String[] {
+                "ARRAY[]::text[]", "ARRAY[NULL]::text[]", "ARRAY['']::text[]"
+        }) {
+            assertThatThrownBy(() -> jdbcTemplate.update(
+                    insert.formatted(invalidScopes), connection.id().value(), 1, "key-1"))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        }
+
+        jdbcTemplate.update(
+                insert.formatted("ARRAY['crm.objects.deals.read']::text[]"),
+                connection.id().value(), 1, "key-1");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT credential_generation FROM connection_credential WHERE connection_id = ?",
+                Long.class, connection.id().value())).isEqualTo(1);
     }
 
     @Test

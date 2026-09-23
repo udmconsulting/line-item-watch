@@ -1,6 +1,7 @@
 package com.udmconsulting.platform.connection.application;
 
 import com.udmconsulting.platform.connection.domain.ExternalAccountId;
+import com.udmconsulting.platform.connection.domain.ConnectionStatus;
 import com.udmconsulting.platform.connection.domain.PlatformConnection;
 import com.udmconsulting.platform.connection.domain.PlatformConnectionId;
 import com.udmconsulting.platform.connection.domain.Provider;
@@ -24,7 +25,8 @@ public final class PlatformConnectionService {
                 PlatformConnectionId.newId(),
                 Objects.requireNonNull(tenantId, "tenantId must not be null"),
                 Objects.requireNonNull(provider, "provider must not be null"),
-                Objects.requireNonNull(externalAccountId, "externalAccountId must not be null"));
+                Objects.requireNonNull(externalAccountId, "externalAccountId must not be null"),
+                ConnectionStatus.DISCONNECTED);
         return connectionStore.save(connection);
     }
 

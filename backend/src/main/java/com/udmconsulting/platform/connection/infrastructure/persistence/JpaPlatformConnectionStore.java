@@ -24,7 +24,8 @@ public class JpaPlatformConnectionStore implements PlatformConnectionStore {
                 connection.id().value(),
                 connection.tenantId().value(),
                 connection.provider(),
-                connection.externalAccountId().value()));
+                connection.externalAccountId().value(),
+                connection.status()));
         return toDomain(saved);
     }
 
@@ -47,6 +48,7 @@ public class JpaPlatformConnectionStore implements PlatformConnectionStore {
                 new PlatformConnectionId(entity.id()),
                 new TenantId(entity.tenantId()),
                 entity.provider(),
-                new ExternalAccountId(entity.externalAccountId()));
+                new ExternalAccountId(entity.externalAccountId()),
+                entity.status());
     }
 }

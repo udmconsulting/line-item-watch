@@ -8,7 +8,7 @@ Provider-specific behavior remains provider-specific when a shared model would e
 
 ## Identity and tenant resolution
 
-An internal **Tenant** is independent of an external account. A **Platform Connection** currently associates a Tenant with an application-generated UUID, an owned provider value, and a non-blank external provider account identity. `HUBSPOT` is the only implemented provider value. A Tenant may own multiple connections, while `(provider, external_account_id)` is globally unique so provider-account resolution identifies exactly one connection and Tenant. Connection lifecycle/status is deferred until OAuth and disconnect behavior give it concrete semantics.
+An internal **Tenant** is independent of an external account. A **Platform Connection** associates a Tenant with an application-generated UUID, provider, non-blank external account identity, and lifecycle status. `HUBSPOT` is the only implemented provider. A Tenant may own multiple connections, while `(provider, external_account_id)` is globally unique. OAuth installation creates or reuses this mapping and never uses HubSpot account identity as the internal Tenant ID.
 
 HubSpot `portalId` must not be used as the internal tenant ID. Inbound traffic is validated and resolved in this order:
 
@@ -32,6 +32,20 @@ Provider-backed customer records will retain `tenant_id`, `connection_id`, and e
 - Handle errors, rate limits, token failures, and unknown provider-controlled values explicitly and observably.
 - Avoid retaining complete payloads unless a defined product, diagnostic, and retention need justifies it.
 
+## Implemented HubSpot OAuth lifecycle
+
+- `GET /integrations/hubspot/oauth/install` issues 256 bits of random state, stores only its SHA-256 digest, and redirects to HubSpot with Deal-read and Line Item-read scopes.
+- `GET /integrations/hubspot/oauth/callback` strictly bounds state/code/error input, consumes valid state once, exchanges the authorization code through `/oauth/2026-09/token`, and creates or reconnects the Tenant/connection/entitlement transactionally. Browser outcomes are fixed non-reflective HTML with no-store/privacy headers and restrictive CSP.
+- State expires after 10 minutes. Consumed/expired rows become eligible for deterministic, bounded opportunistic cleanup after the 24-hour replay-detection period.
+- Refresh credentials use AES-256-GCM with a fresh 96-bit nonce and authenticated provider/connection context. The key and key ID are externally configured. Only ciphertext, nonce, key/cipher metadata, scopes, and credential generation are persisted.
+- Access tokens are created on demand for one operation and are never persisted or cached. Refresh locking, single-flight/coalescing, and automatic retry loops are deliberately absent until recurring provider reads justify them.
+- Returned account identity and required scopes are validated before installation activation or refreshed access-token use. Under-scoped installation grants are rejected and revoked best-effort; authoritative current-generation scope loss requires reauthentication.
+- Replacement refresh tokens use compare-and-advance on the durable Platform Connection credential generation. Confirmed invalid/revoked refresh credentials transition to `REAUTH_REQUIRED` only if the failed generation is still current.
+- The internal uninstall service refreshes on demand, calls `/appinstalls/2026-09/external-install`, and removes the credential/marks `DISCONNECTED` only for the operation's still-current generation. No public disconnect endpoint exists.
+- Destructive stale provider responses return a retryable concurrent-change outcome and cannot mutate a newer credential installed by reconnect or another refresh.
+
+Token, authenticated refresh-token revocation, and uninstall calls use the date-versioned `2026-09` HubSpot endpoints with bounded configurable network timeouts. Provider calls occur outside database transactions; only short state-consumption, installation-finalization, and generation-checked mutations are transactional.
+
 ## Two different extension operations
 
 ### Adding a Product Module
@@ -46,4 +60,4 @@ One operation does not imply the other. Follow the separate checklists in [Addin
 
 ## Decisions deferred
 
-Authentication implementation, provider mappings, credentials/key management, future providers, and provider-specific reconciliation limits remain TBD. Future HubSpot code belongs under `com.udmconsulting.integrations.hubspot` and must depend inward on focused application boundaries; no provider adapter package exists yet.
+Production key-management service/rotation, recurring HubSpot reads, webhook authentication/mapping, access-token caching/coalescing, public disconnect UX, future providers, and provider-specific reconciliation limits remain deferred. HubSpot adapter code lives under `com.udmconsulting.integrations.hubspot` and depends inward on focused application/Platform Core boundaries.

@@ -24,4 +24,4 @@ HubSpot Marketplace terms do **not** replace our own customer-facing provider te
 - Do not claim GDPR, SOC 2, ISO 27001, HIPAA, certification, zero risk, or completed legal review without explicit evidence.
 - Review legal/trust content whenever processing, providers, subprocessors, geography, retention, billing, onboarding, or security behavior changes.
 
-The onboarding/terms-acceptance mechanism (including whether and how clickwrap is used), document versions, acceptance evidence, governing terms, launch details, and legal review owner are TBD. Decide the mechanism before external onboarding that requires acceptance; finalize applicable artifacts before they are presented to customers.
+The HubSpot project still contains development placeholder support URLs/contact details. Replace them with approved real support, documentation, privacy, and security contact information before any external Beta distribution. The onboarding/terms-acceptance mechanism (including whether and how clickwrap is used), document versions, acceptance evidence, governing terms, launch details, and legal review owner are TBD.

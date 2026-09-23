@@ -4,9 +4,13 @@ This is an engineering posture document, not marketing or a compliance claim.
 
 ## Current / proven
 
-- The backend foundation persists only application-generated Tenant and Platform Connection IDs, provider/external account identity, Product Module entitlement, and creation/enabled timestamps in PostgreSQL.
-- Tenant and entitlement foreign keys, provider/account uniqueness, tenant/module uniqueness, tenant-scoped connection lookup, and negative isolation cases are covered by PostgreSQL integration tests.
-- No OAuth credentials, HubSpot business objects, webhook payloads, user data, billing data, public endpoints, or provider adapters are implemented.
+- The backend persists application-generated Tenant/connection identity, provider account identity, connection lifecycle, Product Module entitlement, OAuth state metadata, and encrypted HubSpot refresh credentials in PostgreSQL.
+- Refresh credentials use AES-256-GCM with random nonces and authenticated provider/connection context. The 256-bit key and key ID are external mandatory configuration; plaintext refresh credentials exist only transiently during provider operations.
+- OAuth state stores a SHA-256 digest rather than the browser value, expires after 10 minutes, is consumed atomically, and becomes eligible for bounded opportunistic deletion after a 24-hour replay-detection period.
+- Access tokens, authorization codes, OAuth client secrets, encryption keys, raw token responses, and decrypted credentials are not persisted. Access tokens are neither cached nor shared between operations.
+- A durable, monotonically increasing Platform Connection credential generation prevents stale invalid-grant, replacement, reinstall, scope-loss, or uninstall results from matching newer credentials, including across deletion/reinstall.
+- Public install/callback endpoints return fixed non-reflective HTML with `no-store`, `no-cache`, `no-referrer`, `nosniff`, and restrictive CSP controls. Provider endpoints and non-local callbacks require HTTPS; local development uses an explicit localhost exception.
+- Tenant/connection constraints, encrypted persistence, lifecycle transitions, concurrent installation, optimistic credential races, HTTP contracts, and negative isolation are covered by automated tests.
 - The feasibility probes require credentials through environment variables rather than committed literals.
 - The accepted spike demonstrated read/history and webhook feasibility; it did not establish production security controls.
 - Architectural boundaries are checked with ArchUnit, while broader Private Beta security and operational controls remain requirements rather than implemented claims.
@@ -38,7 +42,7 @@ Use least privilege, individual rather than shared production credentials, contr
 ## TBD
 
 - hosting/database provider and processing region;
-- key and secret management implementation;
+- production managed key/secret service and rotation procedure;
 - logging, monitoring, and error-tracking vendors;
 - production IAM and privileged-access mechanism;
 - backup retention, restore cadence, RPO, and RTO;

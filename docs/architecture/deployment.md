@@ -9,7 +9,7 @@ The same codebase/artifact may expose logical runtime roles:
 - **API:** public HTTPS endpoints and synchronous application interactions;
 - **worker:** durable asynchronous provider, baseline, event, and reconciliation work.
 
-Logical roles permit independent scaling or failure isolation later without requiring separate services now. The implemented foundation is one non-web Spring Boot 4.1.1 artifact built with Java 25 and Maven. It has no API/worker role configuration; that logical split remains deferred until asynchronous processing exists.
+Logical roles permit independent scaling or failure isolation later without requiring separate services now. The implemented foundation is one Spring Boot 4.1.1 HTTP artifact built with Java 25 and Maven. It exposes only the public HubSpot OAuth install/callback endpoints; no worker role or public administration/disconnect API exists.
 
 ## Infrastructure expectations
 
@@ -20,7 +20,9 @@ Logical roles permit independent scaling or failure isolation later without requ
 - Services require health monitoring, centralized logs, error tracking, and actionable alerts.
 - Access is least-privilege, individual rather than shared, controlled, and auditable where appropriate.
 - An EU processing region is preferred where practical, subject to provider evaluation.
+- OAuth client credentials and the Base64-encoded AES-256 credential key are mandatory environment-supplied configuration. The application fails startup when these are absent or invalid.
+- HubSpot provider traffic requires HTTPS outside explicit localhost/loopback development stubs and uses externally configurable bounded connect/read timeouts.
 
 ## Deferred decisions
 
-Docker Compose supplies PostgreSQL 18.6 for local development only. Hosting provider, managed database provider, region, network topology, job mechanism, secret/key-management service, observability vendors, backup retention, RPO, RTO, capacity, and deployment pipeline are TBD. These decisions are due before the affected production capability or Private Beta environment is approved; local Compose is not a production topology decision.
+Docker Compose supplies PostgreSQL 18.6 for local development only. The current external key configuration is suitable for controlled development/acceptance, not a production key-management decision. Hosting provider, managed database provider, region, network topology, job mechanism, managed secret/key service and rotation, observability vendors, backup retention, RPO, RTO, capacity, and deployment pipeline are TBD.

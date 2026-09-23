@@ -1,6 +1,7 @@
 package com.udmconsulting.platform.connection.infrastructure.persistence;
 
 import com.udmconsulting.platform.connection.domain.Provider;
+import com.udmconsulting.platform.connection.domain.ConnectionStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -35,6 +36,16 @@ class PlatformConnectionEntity {
     @Column(name = "external_account_id", nullable = false, updatable = false, length = 255)
     private String externalAccountId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 32)
+    private ConnectionStatus status;
+
+    @Column(name = "status_changed_at", nullable = false, insertable = false, updatable = false)
+    private Instant statusChangedAt;
+
+    @Column(name = "credential_generation", nullable = false, insertable = false, updatable = false)
+    private long credentialGeneration;
+
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private Instant createdAt;
 
@@ -42,11 +53,12 @@ class PlatformConnectionEntity {
     }
 
     PlatformConnectionEntity(
-            UUID id, UUID tenantId, Provider provider, String externalAccountId) {
+            UUID id, UUID tenantId, Provider provider, String externalAccountId, ConnectionStatus status) {
         this.id = id;
         this.tenantId = tenantId;
         this.provider = provider;
         this.externalAccountId = externalAccountId;
+        this.status = status;
     }
 
     UUID id() {
@@ -63,5 +75,9 @@ class PlatformConnectionEntity {
 
     String externalAccountId() {
         return externalAccountId;
+    }
+
+    ConnectionStatus status() {
+        return status;
     }
 }

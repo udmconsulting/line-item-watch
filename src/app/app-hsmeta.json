@@ -2,13 +2,15 @@
   "uid": "get_started_app",
   "type": "app",
   "config": {
-    "description": "A basic static token app for testing",
-    "name": "My Get Started app",
-    "distribution": "private",
+    "description": "Audit history for HubSpot Deal Line Item changes.",
+    "name": "Line Item Watch",
+    "distribution": "marketplace",
     "auth": {
-      "type": "static",
+      "type": "oauth",
+      "redirectUrls": [
+        "http://localhost:8080/integrations/hubspot/oauth/callback"
+      ],
       "requiredScopes": [
-        "oauth",
         "crm.objects.deals.read",
         "crm.objects.line_items.read"
       ],

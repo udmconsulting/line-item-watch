@@ -12,15 +12,19 @@ Retain only the tenant, connection, commercial-item, snapshot, audit, and operat
 
 ### Uninstall or provider disconnect
 
-Stop provider processing, invalidate or revoke credentials where supported, remove locally held active credentials, and define whether customer data enters a short recovery window or is deleted immediately. Exact behavior and customer notice are TBD.
+The implemented internal HubSpot uninstall service calls the provider uninstall API, then removes the local refresh credential and marks the connection `DISCONNECTED` only when the durable credential generation used by the operation is still current. Confirmed invalid/revoked current credentials are removed and marked `REAUTH_REQUIRED`. Every lifecycle mutation advances a generation that survives deletion, so a concurrent reinstall is preserved. A customer-facing disconnect workflow and future module-data handling remain TBD.
 
 ### Tenant deletion
 
-The foundation database cascades deletion of a Tenant row to its Platform Connections and entitlements, and integration tests verify those constraints. No customer-facing deletion operation exists yet. The complete workflow must identify all future module data, credentials, events/jobs, logs where feasible, and backups. Verification evidence, exceptions required by law/contract, and completion timeline are TBD.
+Deleting a Tenant row cascades to Platform Connections, encrypted credentials, and entitlements, and integration tests verify the constraints. No customer-facing deletion operation exists yet. The complete workflow must identify all future module data, events/jobs, logs where feasible, and backups.
 
 ### Credentials
 
-Retain only during an active authorized connection or a narrowly defined recovery need. Revoke/remove on uninstall, disconnect, tenant deletion, or confirmed compromise. Token values must not survive in logs or error systems.
+Refresh credentials are retained only while locally authorized. Replacement, invalidation, uninstall, and reinstall advance a durable monotonic generation; superseded provider refresh tokens are revoked with the authenticated HubSpot revocation form best-effort after commit. Successful uninstall, confirmed current-generation revocation, or Tenant deletion removes the credential. Access tokens are transient for one operation. Token values must not survive in logs, error systems, or object rendering.
+
+### OAuth state
+
+Install state expires after 10 minutes. Only its SHA-256 digest and correlation/timing metadata are persisted. Consumed or expired rows become eligible for deterministic bounded-batch deletion after the 24-hour replay-detection period when later state is issued.
 
 ### Audit history and snapshots
 
