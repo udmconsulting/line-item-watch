@@ -12,6 +12,20 @@ The suite verifies Liquibase/Hibernate startup, foundation isolation and constra
 
 Live HubSpot acceptance is intentionally opt-in and is not part of Maven verification. It requires an approved isolated account, environment-supplied secrets, matching callback configuration, and an explicit cleanup plan.
 
+### Live on-demand refresh acceptance
+
+`HubSpotLiveRefreshAcceptanceIT` is a test-only harness for one controlled refresh of the existing local HubSpot installation. Maven Surefire does not select its `*IT` name during normal `./mvnw verify`; it runs only when explicitly selected with `-Dtest=HubSpotLiveRefreshAcceptanceIT` and fails before provider access unless `HUBSPOT_LIVE_ACCEPTANCE=true` is also present.
+
+Run it only from `backend/` with the `local` Spring profile, the real environment-supplied HubSpot OAuth and credential-encryption configuration, the approved local PostgreSQL installation, and explicit authorization for a live refresh:
+
+```shell
+SPRING_PROFILES_ACTIVE=local \
+HUBSPOT_LIVE_ACCEPTANCE=true \
+./mvnw -Dtest=HubSpotLiveRefreshAcceptanceIT test
+```
+
+The harness resolves HubSpot account `149377304` through Platform Core, invokes the production on-demand access-token provider exactly once, validates the resulting token only as a nonblank transient value, and checks the connection, entitlement, encrypted credential, and generation state before and after the call. HubSpot may return a replacement refresh credential, in which case the production compare-and-advance path increases `credential_generation`. The harness never prints access or refresh tokens and must not be run casually or against production customer installations.
+
 ## Required critical coverage
 
 As applicable to a change, verify:
