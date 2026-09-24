@@ -26,6 +26,20 @@ HUBSPOT_LIVE_ACCEPTANCE=true \
 
 The harness resolves HubSpot account `149377304` through Platform Core, invokes the production on-demand access-token provider exactly once, validates the resulting token only as a nonblank transient value, and checks the connection, entitlement, encrypted credential, and generation state before and after the call. HubSpot may return a replacement refresh credential, in which case the production compare-and-advance path increases `credential_generation`. The harness never prints access or refresh tokens and must not be run casually or against production customer installations.
 
+### Live uninstall acceptance
+
+`HubSpotLiveUninstallAcceptanceIT` is a destructive, test-only harness for one controlled uninstall of the existing local HubSpot installation. Maven Surefire does not select its `*IT` name during normal `./mvnw verify`. It runs only when explicitly selected with `-Dtest=HubSpotLiveUninstallAcceptanceIT`, and it fails before provider access unless `HUBSPOT_LIVE_UNINSTALL_CONFIRM=149377304` exactly matches the approved developer-test account.
+
+Run it only from `backend/` with the `local` Spring profile, the real environment-supplied HubSpot OAuth and credential-encryption configuration, the approved local PostgreSQL installation, and explicit authorization for a destructive live uninstall:
+
+```shell
+SPRING_PROFILES_ACTIVE=local \
+HUBSPOT_LIVE_UNINSTALL_CONFIRM=149377304 \
+./mvnw -Dtest=HubSpotLiveUninstallAcceptanceIT test
+```
+
+The harness resolves the approved account through Platform Core and invokes the production uninstall service exactly once. That path may first refresh and introspect a transient access token, including a generation-guarded replacement refresh credential, before performing the real HubSpot uninstall and conditionally finalizing local disconnection. Durable credential generation may therefore advance before the credential is deleted. A successful uninstall preserves the Tenant, Platform Connection, and `LINE_ITEM_WATCH` entitlement, deletes the encrypted refresh credential, and marks the connection `DISCONNECTED`. The harness never prints access or refresh tokens and must never be run casually or against a customer or production installation. After acceptance, restoring the developer environment for P.3 requires a separate, explicitly authorized OAuth reinstall.
+
 ## Required critical coverage
 
 As applicable to a change, verify:
