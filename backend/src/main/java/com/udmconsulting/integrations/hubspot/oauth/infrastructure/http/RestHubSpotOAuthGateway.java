@@ -2,8 +2,11 @@ package com.udmconsulting.integrations.hubspot.oauth.infrastructure.http;
 
 import com.udmconsulting.integrations.hubspot.config.HubSpotOAuthProperties;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotAuthorizationException;
+import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotInactiveAccessTokenException;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotOAuthGateway;
+import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotOAuthFailureCategory;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotProviderUnavailableException;
+import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotTokenMetadataException;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotUninstallException;
 import com.udmconsulting.integrations.hubspot.oauth.application.InvalidRefreshCredentialException;
 import java.util.LinkedHashSet;
@@ -25,6 +28,7 @@ import tools.jackson.core.JacksonException;
 public final class RestHubSpotOAuthGateway implements HubSpotOAuthGateway {
 
     static final String TOKEN_PATH = "/oauth/2026-09/token";
+    static final String INTROSPECTION_PATH = "/oauth/2026-09/token/introspect";
     static final String REVOKE_PATH = "/oauth/2026-09/token/revoke";
     static final String UNINSTALL_PATH = "/appinstalls/2026-09/external-install";
 
@@ -42,29 +46,59 @@ public final class RestHubSpotOAuthGateway implements HubSpotOAuthGateway {
     }
 
     @Override
-    public AuthorizationGrant exchangeAuthorizationCode(String authorizationCode) {
+    public IssuedAuthorizationTokens exchangeAuthorizationCode(String authorizationCode) {
         MultiValueMap<String, String> form = commonTokenForm("authorization_code");
         form.add("code", authorizationCode);
         form.add("redirect_uri", properties.redirectUri().toString());
         JsonNode response = tokenRequest(form, false);
-        return new AuthorizationGrant(
+        validateIssuedAccessToken(response);
+        return new IssuedAuthorizationTokens(
                 requiredText(response, "access_token"),
-                requiredText(response, "refresh_token"),
-                requiredAccountId(response),
-                scopes(response));
+                requiredText(response, "refresh_token"));
     }
 
     @Override
-    public RefreshGrant refresh(String refreshToken) {
+    public IssuedRefreshTokens refresh(String refreshToken) {
         MultiValueMap<String, String> form = commonTokenForm("refresh_token");
         form.add("refresh_token", refreshToken);
         JsonNode response = tokenRequest(form, true);
+        validateIssuedAccessToken(response);
         String replacement = optionalText(response, "refresh_token");
-        return new RefreshGrant(
+        return new IssuedRefreshTokens(
                 requiredText(response, "access_token"),
-                Optional.ofNullable(replacement),
-                requiredAccountId(response),
-                scopes(response));
+                Optional.ofNullable(replacement));
+    }
+
+    @Override
+    public AccessTokenMetadata introspectAccessToken(String accessToken) {
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("client_id", properties.clientId());
+        form.add("client_secret", properties.clientSecret());
+        form.add("token", accessToken);
+        form.add("token_type_hint", "access_token");
+        JsonNode response;
+        try {
+            response = restClient.post()
+                    .uri(INTROSPECTION_PATH)
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(form)
+                    .exchange((request, providerResponse) -> {
+                        if (providerResponse.getStatusCode().is2xxSuccessful()) {
+                            return readIntrospectionBody(providerResponse.getBody());
+                        }
+                        if (providerResponse.getStatusCode().is5xxServerError()
+                                || providerResponse.getStatusCode().value() == 429) {
+                            throw new HubSpotProviderUnavailableException(
+                                    HubSpotOAuthFailureCategory.TOKEN_INTROSPECTION_PROVIDER_UNAVAILABLE);
+                        }
+                        throw new HubSpotAuthorizationException(
+                                HubSpotOAuthFailureCategory.TOKEN_INTROSPECTION_REJECTED);
+                    });
+        } catch (ResourceAccessException exception) {
+            throw new HubSpotProviderUnavailableException(
+                    HubSpotOAuthFailureCategory.TOKEN_INTROSPECTION_PROVIDER_UNAVAILABLE, exception);
+        }
+        return validateIntrospection(response);
     }
 
     @Override
@@ -86,7 +120,8 @@ public final class RestHubSpotOAuthGateway implements HubSpotOAuthGateway {
                         return null;
                     });
         } catch (ResourceAccessException exception) {
-            throw new HubSpotProviderUnavailableException(exception);
+            throw new HubSpotProviderUnavailableException(
+                    HubSpotOAuthFailureCategory.TOKEN_EXCHANGE_PROVIDER_UNAVAILABLE, exception);
         }
     }
 
@@ -100,14 +135,16 @@ public final class RestHubSpotOAuthGateway implements HubSpotOAuthGateway {
                         if (!response.getStatusCode().is2xxSuccessful()) {
                             if (response.getStatusCode().is5xxServerError()
                                     || response.getStatusCode().value() == 429) {
-                                throw new HubSpotProviderUnavailableException();
+                                throw new HubSpotProviderUnavailableException(
+                                        HubSpotOAuthFailureCategory.TOKEN_EXCHANGE_PROVIDER_UNAVAILABLE);
                             }
                             throw new HubSpotUninstallException();
                         }
                         return null;
                     });
         } catch (ResourceAccessException exception) {
-            throw new HubSpotProviderUnavailableException(exception);
+            throw new HubSpotProviderUnavailableException(
+                    HubSpotOAuthFailureCategory.TOKEN_EXCHANGE_PROVIDER_UNAVAILABLE, exception);
         }
     }
 
@@ -118,21 +155,24 @@ public final class RestHubSpotOAuthGateway implements HubSpotOAuthGateway {
                     .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                     .body(form)
                     .exchange((request, response) -> {
-                        JsonNode body = readBody(response.getBody());
                         if (response.getStatusCode().is2xxSuccessful()) {
-                            return body;
+                            return readTokenBody(response.getBody());
                         }
+                        JsonNode body = readBodyIfJson(response.getBody());
                         if (refresh && isConfirmedInvalidCredential(body)) {
                             throw new InvalidRefreshCredentialException();
                         }
                         if (response.getStatusCode().is5xxServerError()
                                 || response.getStatusCode().value() == 429) {
-                            throw new HubSpotProviderUnavailableException();
+                            throw new HubSpotProviderUnavailableException(
+                                    HubSpotOAuthFailureCategory.TOKEN_EXCHANGE_PROVIDER_UNAVAILABLE);
                         }
-                        throw new HubSpotAuthorizationException();
+                        throw new HubSpotAuthorizationException(
+                                HubSpotOAuthFailureCategory.TOKEN_EXCHANGE_REJECTED);
                     });
         } catch (ResourceAccessException exception) {
-            throw new HubSpotProviderUnavailableException(exception);
+            throw new HubSpotProviderUnavailableException(
+                    HubSpotOAuthFailureCategory.TOKEN_EXCHANGE_PROVIDER_UNAVAILABLE, exception);
         }
     }
 
@@ -144,23 +184,47 @@ public final class RestHubSpotOAuthGateway implements HubSpotOAuthGateway {
         return form;
     }
 
-    private JsonNode readBody(java.io.InputStream inputStream) {
+    private JsonNode readTokenBody(java.io.InputStream inputStream) {
         try {
             JsonNode body = objectMapper.readTree(inputStream);
             if (body == null) {
-                throw new HubSpotProviderUnavailableException();
+                throw new HubSpotAuthorizationException(
+                        HubSpotOAuthFailureCategory.TOKEN_RESPONSE_INVALID);
             }
             return body;
         } catch (JacksonException exception) {
-            throw new HubSpotProviderUnavailableException(exception);
+            throw new HubSpotAuthorizationException(
+                    HubSpotOAuthFailureCategory.TOKEN_RESPONSE_INVALID);
+        }
+    }
+
+    private JsonNode readIntrospectionBody(java.io.InputStream inputStream) {
+        try {
+            JsonNode body = objectMapper.readTree(inputStream);
+            if (body == null) {
+                throw new HubSpotTokenMetadataException();
+            }
+            return body;
+        } catch (JacksonException exception) {
+            throw new HubSpotTokenMetadataException();
+        }
+    }
+
+    private JsonNode readBodyIfJson(java.io.InputStream inputStream) {
+        try {
+            return objectMapper.readTree(inputStream);
+        } catch (JacksonException exception) {
+            return null;
         }
     }
 
     private static RuntimeException classifyTechnicalFailure(int status) {
         if (status == 429 || status >= 500) {
-            return new HubSpotProviderUnavailableException();
+            return new HubSpotProviderUnavailableException(
+                    HubSpotOAuthFailureCategory.TOKEN_EXCHANGE_PROVIDER_UNAVAILABLE);
         }
-        return new HubSpotAuthorizationException();
+        return new HubSpotAuthorizationException(
+                HubSpotOAuthFailureCategory.TOKEN_EXCHANGE_REJECTED);
     }
 
     private static boolean isConfirmedInvalidCredential(JsonNode body) {
@@ -178,25 +242,38 @@ public final class RestHubSpotOAuthGateway implements HubSpotOAuthGateway {
         return false;
     }
 
-    private static String requiredAccountId(JsonNode response) {
-        for (String field : new String[] {"hub_id", "hubId"}) {
-            JsonNode value = response.get(field);
-            if (value != null && !value.isNull() && !value.asText().isBlank()) {
-                return value.asText();
-            }
-        }
-        throw new HubSpotAuthorizationException();
-    }
-
     private static String requiredText(JsonNode response, String field) {
         String value = optionalText(response, field);
         if (value == null) {
-            throw new HubSpotAuthorizationException();
+            throw new HubSpotAuthorizationException(
+                    HubSpotOAuthFailureCategory.TOKEN_RESPONSE_INVALID);
         }
         return value;
     }
 
+    private static void validateIssuedAccessToken(JsonNode response) {
+        requiredText(response, "access_token");
+        if (!"access_token".equals(optionalText(response, "token_use"))) {
+            throw new HubSpotAuthorizationException(
+                    HubSpotOAuthFailureCategory.TOKEN_RESPONSE_INVALID);
+        }
+        String tokenType = optionalText(response, "token_type");
+        if (tokenType == null || !"bearer".equalsIgnoreCase(tokenType)) {
+            throw new HubSpotAuthorizationException(
+                    HubSpotOAuthFailureCategory.TOKEN_RESPONSE_INVALID);
+        }
+        JsonNode expiresIn = response.get("expires_in");
+        if (expiresIn == null || !expiresIn.isIntegralNumber()
+                || !expiresIn.canConvertToLong() || expiresIn.longValue() <= 0) {
+            throw new HubSpotAuthorizationException(
+                    HubSpotOAuthFailureCategory.TOKEN_RESPONSE_INVALID);
+        }
+    }
+
     private static String optionalText(JsonNode response, String field) {
+        if (response == null) {
+            return null;
+        }
         JsonNode value = response.get(field);
         if (value == null || value.isNull() || value.asText().isBlank()) {
             return null;
@@ -204,20 +281,43 @@ public final class RestHubSpotOAuthGateway implements HubSpotOAuthGateway {
         return value.asText();
     }
 
+    private AccessTokenMetadata validateIntrospection(JsonNode response) {
+        JsonNode active = response.get("active");
+        if (active == null || !active.isBoolean()) {
+            throw new HubSpotTokenMetadataException();
+        }
+        if (!active.booleanValue()) {
+            throw new HubSpotInactiveAccessTokenException();
+        }
+        if (!"access_token".equals(optionalText(response, "token_use"))) {
+            throw new HubSpotTokenMetadataException();
+        }
+        String tokenType = optionalText(response, "token_type");
+        if (tokenType == null || !"bearer".equalsIgnoreCase(tokenType)) {
+            throw new HubSpotTokenMetadataException();
+        }
+        if (!properties.clientId().equals(optionalText(response, "client_id"))) {
+            throw new HubSpotTokenMetadataException();
+        }
+        JsonNode hubId = response.get("hub_id");
+        if (hubId == null || !hubId.isIntegralNumber() || !hubId.canConvertToLong()
+                || hubId.longValue() <= 0) {
+            throw new HubSpotTokenMetadataException();
+        }
+        return new AccessTokenMetadata(Long.toString(hubId.longValue()), scopes(response));
+    }
+
     private static Set<String> scopes(JsonNode response) {
         JsonNode scopes = response.get("scopes");
-        if (scopes == null || scopes.isNull()) {
-            return Set.of();
+        if (scopes == null || !scopes.isArray()) {
+            throw new HubSpotTokenMetadataException();
         }
         Set<String> values = new LinkedHashSet<>();
-        if (scopes.isArray()) {
-            scopes.forEach(value -> values.add(value.asText()));
-        } else {
-            for (String value : scopes.asText().split("[ ,]+")) {
-                if (!value.isBlank()) {
-                    values.add(value);
-                }
+        for (JsonNode value : scopes) {
+            if (!value.isTextual() || value.textValue().isBlank()) {
+                throw new HubSpotTokenMetadataException();
             }
+            values.add(value.textValue());
         }
         return Set.copyOf(values);
     }

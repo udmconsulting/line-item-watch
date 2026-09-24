@@ -7,19 +7,28 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withNoContent;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withUnauthorizedRequest;
 
 import com.udmconsulting.integrations.hubspot.config.HubSpotOAuthProperties;
+import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotInactiveAccessTokenException;
+import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotOAuthException;
+import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotOAuthFailureCategory;
+import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotProviderUnavailableException;
+import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotTokenMetadataException;
 import com.udmconsulting.integrations.hubspot.oauth.application.InvalidRefreshCredentialException;
 import java.net.URI;
-import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -43,7 +52,7 @@ class RestHubSpotOAuthGatewayTest {
     }
 
     @Test
-    void exchangesAuthorizationCodeAtCurrentEndpointWithFormEncoding() {
+    void tokenIssuanceDoesNotRequireOrUseHubIdOrScopes() {
         LinkedMultiValueMap<String, String> expected = new LinkedMultiValueMap<>();
         expected.add("grant_type", "authorization_code");
         expected.add("client_id", "client-id");
@@ -55,16 +64,37 @@ class RestHubSpotOAuthGatewayTest {
                 .andExpect(content().contentType(MediaType.APPLICATION_FORM_URLENCODED))
                 .andExpect(content().formData(expected))
                 .andRespond(withSuccess("""
-                        {"access_token":"transient","refresh_token":"refresh","hub_id":12345,
-                         "scopes":["crm.objects.deals.read","crm.objects.line_items.read"]}
+                        {"access_token":"transient","refresh_token":"refresh","expires_in":1800,
+                         "token_type":"bearer","token_use":"access_token"}
                         """, MediaType.APPLICATION_JSON));
 
         var result = gateway.exchangeAuthorizationCode("authorization-code");
 
-        assertThat(result.externalAccountId()).isEqualTo("12345");
+        assertThat(result.accessToken()).isEqualTo("transient");
         assertThat(result.refreshToken()).isEqualTo("refresh");
-        assertThat(result.grantedScopes()).containsExactlyInAnyOrderElementsOf(
-                HubSpotOAuthProperties.REQUIRED_SCOPES);
+        server.verify();
+    }
+
+    @Test
+    void introspectsAtCurrentEndpointWithCompleteFormAndAllowsAdditionalScopes() {
+        LinkedMultiValueMap<String, String> expected = new LinkedMultiValueMap<>();
+        expected.add("client_id", "client-id");
+        expected.add("client_secret", "client-secret");
+        expected.add("token", "transient-access");
+        expected.add("token_type_hint", "access_token");
+        server.expect(requestTo("https://api.hubapi.test/oauth/2026-09/token/introspect"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().contentType(MediaType.APPLICATION_FORM_URLENCODED))
+                .andExpect(content().formData(expected))
+                .andRespond(withSuccess(validIntrospection(
+                        "client-id", "12345", "crm.objects.contacts.read"), MediaType.APPLICATION_JSON));
+
+        var result = gateway.introspectAccessToken("transient-access");
+
+        assertThat(result.externalAccountId()).isEqualTo("12345");
+        assertThat(result.grantedScopes())
+                .containsAll(HubSpotOAuthProperties.REQUIRED_SCOPES)
+                .contains("crm.objects.contacts.read");
         server.verify();
     }
 
@@ -81,20 +111,131 @@ class RestHubSpotOAuthGatewayTest {
     }
 
     @Test
-    void refreshReturnsOptionalReplacementWithoutPersistingAccessToken() {
+    void refreshReturnsLatestCredentialWithoutUsingOptionalMetadata() {
         server.expect(requestTo("https://api.hubapi.test/oauth/2026-09/token"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withSuccess("""
-                        {"access_token":"transient","refresh_token":"replacement","hub_id":12345,
-                         "scopes":"crm.objects.deals.read crm.objects.line_items.read"}
+                        {"access_token":"transient","refresh_token":"replacement","expires_in":1800,
+                         "token_type":"bearer","token_use":"access_token"}
                         """, MediaType.APPLICATION_JSON));
 
         var result = gateway.refresh("old-refresh");
 
         assertThat(result.accessToken()).isEqualTo("transient");
         assertThat(result.replacementRefreshToken()).contains("replacement");
-        assertThat(result.grantedScopes()).isEqualTo(Set.copyOf(HubSpotOAuthProperties.REQUIRED_SCOPES));
         server.verify();
+    }
+
+    @Test
+    void inactiveIntrospectionIsAuthoritativelyUnusable() {
+        expectIntrospection("""
+                {"active":false,"token_use":"access_token","token_type":"bearer",
+                 "client_id":"client-id","hub_id":12345,"scopes":[]}
+                """);
+
+        assertThatThrownBy(() -> gateway.introspectAccessToken("access"))
+                .isInstanceOfSatisfying(HubSpotInactiveAccessTokenException.class,
+                        exception -> assertThat(exception.category())
+                                .isEqualTo(HubSpotOAuthFailureCategory.TOKEN_INTROSPECTION_REJECTED));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{}",
+            "{\"active\":\"true\",\"token_use\":\"access_token\",\"token_type\":\"bearer\",\"client_id\":\"client-id\",\"hub_id\":12345,\"scopes\":[]}",
+            "{\"active\":true,\"token_use\":\"refresh_token\",\"token_type\":\"bearer\",\"client_id\":\"client-id\",\"hub_id\":12345,\"scopes\":[]}",
+            "{\"active\":true,\"token_use\":\"access_token\",\"token_type\":\"bearer\",\"client_id\":\"wrong-client\",\"hub_id\":12345,\"scopes\":[]}",
+            "{\"active\":true,\"token_use\":\"access_token\",\"token_type\":\"bearer\",\"client_id\":\"client-id\",\"scopes\":[]}",
+            "{\"active\":true,\"token_use\":\"access_token\",\"token_type\":\"bearer\",\"client_id\":\"client-id\",\"hub_id\":12345,\"scopes\":\"scope\"}"
+    })
+    void rejectsMalformedOrMismatchedIntrospectionMetadata(String response) {
+        expectIntrospection(response);
+
+        assertThatThrownBy(() -> gateway.introspectAccessToken("access"))
+                .isInstanceOfSatisfying(HubSpotTokenMetadataException.class,
+                        exception -> assertThat(exception.category())
+                                .isEqualTo(HubSpotOAuthFailureCategory.TOKEN_METADATA_INVALID));
+    }
+
+    @Test
+    void distinguishesMalformedTokenResponse() {
+        server.expect(requestTo("https://api.hubapi.test/oauth/2026-09/token"))
+                .andRespond(withSuccess("{\"refresh_token\":\"refresh\"}", MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> gateway.exchangeAuthorizationCode("code"))
+                .isInstanceOfSatisfying(HubSpotOAuthException.class,
+                        exception -> assertThat(exception.category())
+                                .isEqualTo(HubSpotOAuthFailureCategory.TOKEN_RESPONSE_INVALID));
+    }
+
+    @Test
+    void rejectsIssuanceWithInvalidAccessTokenSemantics() {
+        server.expect(requestTo("https://api.hubapi.test/oauth/2026-09/token"))
+                .andRespond(withSuccess("""
+                        {"access_token":"transient","refresh_token":"refresh","expires_in":1800,
+                         "token_type":"bearer","token_use":"refresh_token"}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> gateway.exchangeAuthorizationCode("code"))
+                .isInstanceOfSatisfying(HubSpotOAuthException.class,
+                        exception -> assertThat(exception.category())
+                                .isEqualTo(HubSpotOAuthFailureCategory.TOKEN_RESPONSE_INVALID));
+    }
+
+    @Test
+    void distinguishesTokenExchangeRejection() {
+        server.expect(requestTo("https://api.hubapi.test/oauth/2026-09/token"))
+                .andRespond(withUnauthorizedRequest());
+
+        assertThatThrownBy(() -> gateway.exchangeAuthorizationCode("sensitive-code"))
+                .isInstanceOfSatisfying(HubSpotOAuthException.class, exception -> {
+                    assertThat(exception.category())
+                            .isEqualTo(HubSpotOAuthFailureCategory.TOKEN_EXCHANGE_REJECTED);
+                    assertThat(exception).hasMessageNotContaining("sensitive-code");
+                });
+    }
+
+    @Test
+    void distinguishesIntrospectionRejection() {
+        server.expect(requestTo("https://api.hubapi.test/oauth/2026-09/token/introspect"))
+                .andRespond(withUnauthorizedRequest());
+
+        assertThatThrownBy(() -> gateway.introspectAccessToken("access"))
+                .isInstanceOfSatisfying(HubSpotOAuthException.class,
+                        exception -> assertThat(exception.category())
+                                .isEqualTo(HubSpotOAuthFailureCategory.TOKEN_INTROSPECTION_REJECTED));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {429, 500, 503})
+    void mapsIntrospectionRateLimitsAndServerFailuresAsUnavailable(int status) {
+        server.expect(requestTo("https://api.hubapi.test/oauth/2026-09/token/introspect"))
+                .andRespond(withStatus(HttpStatus.valueOf(status)));
+
+        assertThatThrownBy(() -> gateway.introspectAccessToken("access"))
+                .isInstanceOfSatisfying(HubSpotProviderUnavailableException.class,
+                        exception -> assertThat(exception.category()).isEqualTo(
+                                HubSpotOAuthFailureCategory.TOKEN_INTROSPECTION_PROVIDER_UNAVAILABLE));
+    }
+
+    @Test
+    void mapsIntrospectionConnectivityFailureAsUnavailableWithoutSensitiveCause() {
+        String accessToken = "sensitive-access-token";
+        String clientSecret = "sensitive-client-secret";
+        server.expect(requestTo("https://api.hubapi.test/oauth/2026-09/token/introspect"))
+                .andRespond(request -> {
+                    throw new ResourceAccessException(accessToken + clientSecret);
+                });
+
+        assertThatThrownBy(() -> gateway.introspectAccessToken(accessToken))
+                .isInstanceOfSatisfying(HubSpotProviderUnavailableException.class, exception -> {
+                    assertThat(exception.category()).isEqualTo(
+                            HubSpotOAuthFailureCategory.TOKEN_INTROSPECTION_PROVIDER_UNAVAILABLE);
+                    assertThat(exception)
+                            .hasMessageNotContaining(accessToken)
+                            .hasMessageNotContaining(clientSecret);
+                    assertThat(exception.getCause()).isNull();
+                });
     }
 
     @Test
@@ -118,5 +259,18 @@ class RestHubSpotOAuthGatewayTest {
         gateway.uninstall("transient-access");
 
         server.verify();
+    }
+
+    private void expectIntrospection(String response) {
+        server.expect(requestTo("https://api.hubapi.test/oauth/2026-09/token/introspect"))
+                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+    }
+
+    private static String validIntrospection(String clientId, String hubId, String additionalScope) {
+        return """
+                {"active":true,"token_use":"access_token","token_type":"bearer",
+                 "client_id":"%s","hub_id":%s,
+                 "scopes":["crm.objects.deals.read","crm.objects.line_items.read","%s"]}
+                """.formatted(clientId, hubId, additionalScope);
     }
 }

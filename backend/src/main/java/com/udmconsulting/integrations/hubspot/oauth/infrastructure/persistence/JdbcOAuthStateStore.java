@@ -31,27 +31,31 @@ public class JdbcOAuthStateStore implements OAuthStateStore {
 
     @Override
     @Transactional
-    public ConsumptionResult consume(byte[] stateHash, Instant consumedAt) {
-        int consumed = jdbcTemplate.update("""
+    public Consumption consume(byte[] stateHash, Instant consumedAt) {
+        UUID correlationId = jdbcTemplate.query("""
                 UPDATE oauth_install_state
                 SET consumed_at = ?
                 WHERE state_hash = ? AND consumed_at IS NULL AND expires_at > ?
-                """, Timestamp.from(consumedAt), stateHash, Timestamp.from(consumedAt));
-        if (consumed == 1) {
-            return ConsumptionResult.CONSUMED;
+                RETURNING correlation_id
+                """, resultSet -> resultSet.next()
+                        ? resultSet.getObject("correlation_id", UUID.class) : null,
+                Timestamp.from(consumedAt), stateHash, Timestamp.from(consumedAt));
+        if (correlationId != null) {
+            return new Consumption(ConsumptionResult.CONSUMED, correlationId);
         }
         return jdbcTemplate.query("""
-                        SELECT expires_at, consumed_at
+                        SELECT correlation_id, expires_at, consumed_at
                         FROM oauth_install_state
                         WHERE state_hash = ?
                         """, resultSet -> {
                     if (!resultSet.next()) {
-                        return ConsumptionResult.INVALID;
+                        return new Consumption(ConsumptionResult.INVALID, null);
                     }
+                    UUID existingCorrelationId = resultSet.getObject("correlation_id", UUID.class);
                     if (resultSet.getObject("consumed_at") != null) {
-                        return ConsumptionResult.REPLAYED;
+                        return new Consumption(ConsumptionResult.REPLAYED, existingCorrelationId);
                     }
-                    return ConsumptionResult.EXPIRED;
+                    return new Consumption(ConsumptionResult.EXPIRED, existingCorrelationId);
                 }, stateHash);
     }
 

@@ -46,17 +46,17 @@ public final class OAuthStateService {
         return new IssuedState(state, correlationId);
     }
 
-    public void consume(String state) {
+    public UUID consume(String state) {
         if (state == null || state.isBlank()) {
             throw new OAuthStateException(OAuthStateException.Reason.INVALID);
         }
-        OAuthStateStore.ConsumptionResult result = stateStore.consume(hash(state), clock.instant());
-        switch (result) {
-            case CONSUMED -> { }
+        OAuthStateStore.Consumption consumption = stateStore.consume(hash(state), clock.instant());
+        return switch (consumption.result()) {
+            case CONSUMED -> Objects.requireNonNull(consumption.correlationId());
             case INVALID -> throw new OAuthStateException(OAuthStateException.Reason.INVALID);
             case EXPIRED -> throw new OAuthStateException(OAuthStateException.Reason.EXPIRED);
             case REPLAYED -> throw new OAuthStateException(OAuthStateException.Reason.REPLAYED);
-        }
+        };
     }
 
     static byte[] hash(String state) {

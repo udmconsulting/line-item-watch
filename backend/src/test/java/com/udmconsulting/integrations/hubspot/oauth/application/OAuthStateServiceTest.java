@@ -30,7 +30,7 @@ class OAuthStateServiceTest {
                 .isEqualTo(OAuthStateService.hash(issued.value()))
                 .isNotEqualTo(java.util.Base64.getUrlDecoder().decode(issued.value()));
 
-        service.consume(issued.value());
+        assertThat(service.consume(issued.value())).isEqualTo(issued.correlationId());
         assertThatThrownBy(() -> service.consume(issued.value()))
                 .isInstanceOfSatisfying(OAuthStateException.class,
                         exception -> assertThat(exception.reason())
@@ -63,23 +63,23 @@ class OAuthStateServiceTest {
 
         @Override
         public void store(byte[] stateHash, UUID correlationId, Instant createdAt, Instant expiresAt) {
-            rows.put(new Bytes(stateHash), new Row(expiresAt));
+            rows.put(new Bytes(stateHash), new Row(expiresAt, correlationId));
         }
 
         @Override
-        public ConsumptionResult consume(byte[] stateHash, Instant consumedAt) {
+        public Consumption consume(byte[] stateHash, Instant consumedAt) {
             Row row = rows.get(new Bytes(stateHash));
             if (row == null) {
-                return ConsumptionResult.INVALID;
+                return new Consumption(ConsumptionResult.INVALID, null);
             }
             if (row.consumed) {
-                return ConsumptionResult.REPLAYED;
+                return new Consumption(ConsumptionResult.REPLAYED, row.correlationId);
             }
             if (!row.expiresAt.isAfter(consumedAt)) {
-                return ConsumptionResult.EXPIRED;
+                return new Consumption(ConsumptionResult.EXPIRED, row.correlationId);
             }
             row.consumed = true;
-            return ConsumptionResult.CONSUMED;
+            return new Consumption(ConsumptionResult.CONSUMED, row.correlationId);
         }
 
         @Override
@@ -89,10 +89,12 @@ class OAuthStateServiceTest {
 
     private static final class Row {
         private Instant expiresAt;
+        private final UUID correlationId;
         private boolean consumed;
 
-        private Row(Instant expiresAt) {
+        private Row(Instant expiresAt, UUID correlationId) {
             this.expiresAt = expiresAt;
+            this.correlationId = correlationId;
         }
     }
 

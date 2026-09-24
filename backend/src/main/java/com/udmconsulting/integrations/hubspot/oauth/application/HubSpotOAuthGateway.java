@@ -5,45 +5,47 @@ import java.util.Set;
 
 public interface HubSpotOAuthGateway {
 
-    AuthorizationGrant exchangeAuthorizationCode(String authorizationCode);
+    IssuedAuthorizationTokens exchangeAuthorizationCode(String authorizationCode);
 
-    RefreshGrant refresh(String refreshToken);
+    IssuedRefreshTokens refresh(String refreshToken);
+
+    AccessTokenMetadata introspectAccessToken(String accessToken);
 
     void revoke(String refreshToken);
 
     void uninstall(String accessToken);
 
-    record AuthorizationGrant(
-            String accessToken,
-            String refreshToken,
-            String externalAccountId,
-            Set<String> grantedScopes) {
-
-        public AuthorizationGrant {
-            grantedScopes = Set.copyOf(grantedScopes);
-        }
+    record IssuedAuthorizationTokens(String accessToken, String refreshToken) {
 
         @Override
         public String toString() {
-            return "AuthorizationGrant[<redacted>]";
+            return "IssuedAuthorizationTokens[<redacted>]";
         }
     }
 
-    record RefreshGrant(
-            String accessToken,
-            Optional<String> replacementRefreshToken,
-            String externalAccountId,
-            Set<String> grantedScopes) {
+    record IssuedRefreshTokens(String accessToken, Optional<String> replacementRefreshToken) {
 
-        public RefreshGrant {
+        public IssuedRefreshTokens {
             replacementRefreshToken = replacementRefreshToken == null
                     ? Optional.empty() : replacementRefreshToken;
+        }
+
+        @Override
+        public String toString() {
+            return "IssuedRefreshTokens[<redacted>]";
+        }
+    }
+
+    record AccessTokenMetadata(String externalAccountId, Set<String> grantedScopes) {
+
+        public AccessTokenMetadata {
             grantedScopes = Set.copyOf(grantedScopes);
         }
 
         @Override
         public String toString() {
-            return "RefreshGrant[<redacted>]";
+            return "AccessTokenMetadata[externalAccountId=" + externalAccountId
+                    + ", grantedScopes=" + grantedScopes + "]";
         }
     }
 }

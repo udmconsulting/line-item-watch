@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotInstallationUseCase;
+import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotTokenMetadataException;
 import com.udmconsulting.integrations.hubspot.oauth.application.OAuthStateException;
 import java.net.URI;
 import java.util.UUID;
@@ -140,6 +141,21 @@ class HubSpotOAuthControllerTest {
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("internal-sensitive-message"))));
         assertSecure(unexpected);
+    }
+
+    @Test
+    void tokenMetadataFailuresKeepTheFixedGenericBrowserResponse() throws Exception {
+        service.failure = new HubSpotTokenMetadataException();
+
+        ResultActions result = mvc.perform(get("/integrations/hubspot/oauth/callback")
+                        .queryParam("code", "sensitive-authorization-code")
+                        .queryParam("state", VALID_STATE))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string(OAuthHttpResponses.ERROR_HTML))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("sensitive-authorization-code"))));
+
+        assertSecure(result);
     }
 
     private static void assertSecure(ResultActions result) throws Exception {
