@@ -47,8 +47,13 @@ public final class ConnectionCredentialService {
     }
 
     public void requireReauthentication(LoadedCredential loadedCredential) {
-        if (!credentialStore.requireReauthenticationIfGeneration(
-                loadedCredential.connectionId(), loadedCredential.credentialGeneration())) {
+        requireReauthentication(
+                loadedCredential.connectionId(), loadedCredential.credentialGeneration());
+    }
+
+    public void requireReauthentication(
+            PlatformConnectionId connectionId, long expectedGeneration) {
+        if (!credentialStore.requireReauthenticationIfGeneration(connectionId, expectedGeneration)) {
             throw new ConcurrentCredentialChangeException();
         }
     }

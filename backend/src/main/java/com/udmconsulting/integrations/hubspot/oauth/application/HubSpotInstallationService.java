@@ -8,6 +8,7 @@ import com.udmconsulting.platform.credential.domain.ConnectionCredential;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Objects;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -53,30 +54,47 @@ public final class HubSpotInstallationService implements HubSpotInstallationUseC
 
     @Override
     public CompletedInstallation completeInstallation(String state, String authorizationCode) {
-        stateService.consume(state);
+        UUID correlationId = stateService.consume(state);
         if (authorizationCode == null || authorizationCode.isBlank()) {
+            logFailure(correlationId, HubSpotOAuthFailureCategory.TOKEN_EXCHANGE_REJECTED);
             throw new HubSpotAuthorizationException();
         }
-        HubSpotOAuthGateway.AuthorizationGrant grant =
-                oauthGateway.exchangeAuthorizationCode(authorizationCode);
-        if (!grant.grantedScopes().containsAll(HubSpotOAuthProperties.REQUIRED_SCOPES)) {
-            revokeBestEffort(grant.refreshToken(), "new credential with insufficient scopes");
-            throw new HubSpotInsufficientScopeException();
-        }
-        HubSpotInstallationStore.FinalizedInstallation finalized;
+        HubSpotOAuthGateway.IssuedAuthorizationTokens issuedTokens;
         try {
-            finalized = installationStore.finalizeInstallation(
-                    grant.externalAccountId(), grant.refreshToken(), grant.grantedScopes());
+            issuedTokens = oauthGateway.exchangeAuthorizationCode(authorizationCode);
         } catch (RuntimeException exception) {
-            revokeBestEffort(grant.refreshToken(), "new credential after local finalization failure");
+            logFailure(correlationId, failureCategory(
+                    exception, HubSpotOAuthFailureCategory.TOKEN_EXCHANGE_REJECTED));
             throw exception;
         }
-        finalized.supersededCredential().ifPresent(prior -> revokeSupersededBestEffort(
-                prior, grant.refreshToken(), finalized.connectionId()));
-        LOGGER.info(
-                "HubSpot installation completed tenantId={} connectionId={} externalAccountId={}",
-                finalized.tenantId().value(), finalized.connectionId().value(), grant.externalAccountId());
-        return new CompletedInstallation(finalized.tenantId(), finalized.connectionId());
+
+        try {
+            HubSpotOAuthGateway.AccessTokenMetadata metadata =
+                    oauthGateway.introspectAccessToken(issuedTokens.accessToken());
+            if (!metadata.grantedScopes().containsAll(HubSpotOAuthProperties.REQUIRED_SCOPES)) {
+                throw new HubSpotInsufficientScopeException();
+            }
+            HubSpotInstallationStore.FinalizedInstallation finalized =
+                    installationStore.finalizeInstallation(
+                            metadata.externalAccountId(),
+                            issuedTokens.refreshToken(),
+                            metadata.grantedScopes());
+            finalized.supersededCredential().ifPresent(prior -> revokeSupersededBestEffort(
+                    prior, issuedTokens.refreshToken(), finalized.connectionId()));
+            LOGGER.info(
+                    "HubSpot installation completed correlationId={} tenantId={} connectionId={} "
+                            + "externalAccountId={}",
+                    correlationId,
+                    finalized.tenantId().value(),
+                    finalized.connectionId().value(),
+                    metadata.externalAccountId());
+            return new CompletedInstallation(finalized.tenantId(), finalized.connectionId());
+        } catch (RuntimeException exception) {
+            revokeBestEffort(issuedTokens.refreshToken(), "new credential after post-issuance failure");
+            logFailure(correlationId, failureCategory(
+                    exception, HubSpotOAuthFailureCategory.LOCAL_FINALIZATION_FAILED));
+            throw exception;
+        }
     }
 
     @Override
@@ -109,6 +127,16 @@ public final class HubSpotInstallationService implements HubSpotInstallationUseC
         } catch (RuntimeException exception) {
             LOGGER.warn("HubSpot token revocation failed for {}; operator follow-up may be required", reason);
         }
+    }
+
+    private static HubSpotOAuthFailureCategory failureCategory(
+            RuntimeException exception, HubSpotOAuthFailureCategory fallback) {
+        return exception instanceof HubSpotOAuthException oauthException
+                ? oauthException.category() : fallback;
+    }
+
+    private static void logFailure(UUID correlationId, HubSpotOAuthFailureCategory category) {
+        LOGGER.warn("HubSpot installation failed correlationId={} category={}", correlationId, category);
     }
 
 }

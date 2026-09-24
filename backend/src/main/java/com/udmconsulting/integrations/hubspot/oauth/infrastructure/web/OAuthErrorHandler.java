@@ -3,6 +3,7 @@ package com.udmconsulting.integrations.hubspot.oauth.infrastructure.web;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotAuthorizationException;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotProviderUnavailableException;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotInsufficientScopeException;
+import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotOAuthException;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotUninstallException;
 import com.udmconsulting.integrations.hubspot.oauth.application.OAuthStateException;
 import com.udmconsulting.platform.credential.application.ConcurrentCredentialChangeException;
@@ -27,6 +28,11 @@ public class OAuthErrorHandler {
 
     @ExceptionHandler(HubSpotInsufficientScopeException.class)
     ResponseEntity<String> insufficientScope() {
+        return OAuthHttpResponses.error(HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(HubSpotOAuthException.class)
+    ResponseEntity<String> oauthContractError() {
         return OAuthHttpResponses.error(HttpStatus.BAD_REQUEST);
     }
 

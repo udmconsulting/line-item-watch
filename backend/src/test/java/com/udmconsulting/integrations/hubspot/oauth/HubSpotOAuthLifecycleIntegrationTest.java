@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotAccessTokenProvider;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotInstallationStore;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotOAuthGateway;
+import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotOAuthFailureCategory;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotProviderUnavailableException;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotUninstallService;
 import com.udmconsulting.integrations.hubspot.oauth.application.InvalidRefreshCredentialException;
@@ -123,7 +124,7 @@ class HubSpotOAuthLifecycleIntegrationTest {
         HubSpotAccessTokenProvider provider = new HubSpotAccessTokenProvider(
                 credentialService, new StubGateway() {
                     @Override
-                    public RefreshGrant refresh(String refreshToken) {
+                    public IssuedRefreshTokens refresh(String refreshToken) {
                         throw new InvalidRefreshCredentialException();
                     }
                 });
@@ -143,7 +144,7 @@ class HubSpotOAuthLifecycleIntegrationTest {
         HubSpotAccessTokenProvider provider = new HubSpotAccessTokenProvider(
                 credentialService, new StubGateway() {
                     @Override
-                    public RefreshGrant refresh(String refreshToken) {
+                    public IssuedRefreshTokens refresh(String refreshToken) {
                         assertThat(refreshToken).isEqualTo("version-n");
                         installationStore.finalizeInstallation(account, "version-n-plus-one", SCOPES);
                         throw new InvalidRefreshCredentialException();
@@ -167,9 +168,9 @@ class HubSpotOAuthLifecycleIntegrationTest {
         HubSpotAccessTokenProvider provider = new HubSpotAccessTokenProvider(
                 credentialService, new StubGateway() {
                     @Override
-                    public RefreshGrant refresh(String refreshToken) {
+                    public IssuedRefreshTokens refresh(String refreshToken) {
                         installationStore.finalizeInstallation(account, "concurrent-winner", SCOPES);
-                        return new RefreshGrant(
+                        return issuedRefresh(
                                 "transient-access", Optional.of("stale-replacement"), account, SCOPES);
                     }
                 });
@@ -184,6 +185,63 @@ class HubSpotOAuthLifecycleIntegrationTest {
     }
 
     @Test
+    void replacementCredentialSurvivesTransientIntrospectionFailure() {
+        String account = uniqueAccount();
+        installationStore.finalizeInstallation(account, "version-n", SCOPES);
+        HubSpotAccessTokenProvider provider = new HubSpotAccessTokenProvider(
+                credentialService, new StubGateway() {
+                    @Override
+                    public IssuedRefreshTokens refresh(String refreshToken) {
+                        return issuedRefresh(
+                                "transient-access", Optional.of("version-n-plus-one"), account, SCOPES);
+                    }
+
+                    @Override
+                    public AccessTokenMetadata introspectAccessToken(String accessToken) {
+                        throw new HubSpotProviderUnavailableException(
+                                HubSpotOAuthFailureCategory.TOKEN_INTROSPECTION_PROVIDER_UNAVAILABLE);
+                    }
+                });
+
+        assertThatThrownBy(() -> provider.accessTokenFor(connection(account)))
+                .isInstanceOf(HubSpotProviderUnavailableException.class);
+
+        PlatformConnection current = connection(account);
+        assertThat(current.status()).isEqualTo(ConnectionStatus.ACTIVE);
+        assertThat(credentialService.load(current).refreshToken()).isEqualTo("version-n-plus-one");
+        assertThat(credentialService.load(current).credentialGeneration()).isEqualTo(2);
+    }
+
+    @Test
+    void staleIntrospectionAfterReplacementCannotInvalidateNewerCredential() {
+        String account = uniqueAccount();
+        installationStore.finalizeInstallation(account, "generation-n", SCOPES);
+        HubSpotAccessTokenProvider provider = new HubSpotAccessTokenProvider(
+                credentialService, new StubGateway() {
+                    @Override
+                    public IssuedRefreshTokens refresh(String refreshToken) {
+                        return issuedRefresh(
+                                "stale-access", Optional.of("generation-n-plus-one"), account, SCOPES);
+                    }
+
+                    @Override
+                    public AccessTokenMetadata introspectAccessToken(String accessToken) {
+                        installationStore.finalizeInstallation(account, "concurrent-winner", SCOPES);
+                        return new AccessTokenMetadata(
+                                account, Set.of("crm.objects.deals.read"));
+                    }
+                });
+
+        assertThatThrownBy(() -> provider.accessTokenFor(connection(account)))
+                .isInstanceOf(ConcurrentCredentialChangeException.class);
+
+        PlatformConnection current = connection(account);
+        assertThat(current.status()).isEqualTo(ConnectionStatus.ACTIVE);
+        assertThat(credentialService.load(current).refreshToken()).isEqualTo("concurrent-winner");
+        assertThat(credentialService.load(current).credentialGeneration()).isEqualTo(3);
+    }
+
+    @Test
     void staleInvalidGrantAfterDeleteAndReinstallCannotMatchRecreatedCredential() {
         String account = uniqueAccount();
         installationStore.finalizeInstallation(account, "generation-n", SCOPES);
@@ -191,7 +249,7 @@ class HubSpotOAuthLifecycleIntegrationTest {
         HubSpotAccessTokenProvider provider = new HubSpotAccessTokenProvider(
                 credentialService, new StubGateway() {
                     @Override
-                    public RefreshGrant refresh(String refreshToken) {
+                    public IssuedRefreshTokens refresh(String refreshToken) {
                         ConnectionCredentialService.LoadedCredential current =
                                 credentialService.load(connection(account));
                         credentialService.requireReauthentication(current);
@@ -218,10 +276,10 @@ class HubSpotOAuthLifecycleIntegrationTest {
         HubSpotAccessTokenProvider provider = new HubSpotAccessTokenProvider(
                 credentialService, new StubGateway() {
                     @Override
-                    public RefreshGrant refresh(String refreshToken) {
+                    public IssuedRefreshTokens refresh(String refreshToken) {
                         credentialService.requireReauthentication(credentialService.load(connection(account)));
                         installationStore.finalizeInstallation(account, "reinstalled-winner", SCOPES);
-                        return new RefreshGrant(
+                        return issuedRefresh(
                                 "stale-access", Optional.of("stale-replacement"), account, SCOPES);
                     }
                 });
@@ -243,10 +301,10 @@ class HubSpotOAuthLifecycleIntegrationTest {
         HubSpotAccessTokenProvider provider = new HubSpotAccessTokenProvider(
                 credentialService, new StubGateway() {
                     @Override
-                    public RefreshGrant refresh(String refreshToken) {
+                    public IssuedRefreshTokens refresh(String refreshToken) {
                         credentialService.requireReauthentication(credentialService.load(connection(account)));
                         installationStore.finalizeInstallation(account, "reinstalled-winner", SCOPES);
-                        return new RefreshGrant(
+                        return issuedRefresh(
                                 "under-scoped", Optional.empty(), account,
                                 Set.of("crm.objects.deals.read"));
                     }
@@ -268,8 +326,8 @@ class HubSpotOAuthLifecycleIntegrationTest {
                 installationStore.finalizeInstallation(account, "generation-n", SCOPES);
         HubSpotOAuthGateway gateway = new StubGateway() {
             @Override
-            public RefreshGrant refresh(String refreshToken) {
-                return new RefreshGrant("stale-access", Optional.empty(), account, SCOPES);
+            public IssuedRefreshTokens refresh(String refreshToken) {
+                return issuedRefresh("stale-access", Optional.empty(), account, SCOPES);
             }
 
             @Override
@@ -302,8 +360,8 @@ class HubSpotOAuthLifecycleIntegrationTest {
                 installationStore.finalizeInstallation(account, "version-n", SCOPES);
         HubSpotOAuthGateway gateway = new StubGateway() {
             @Override
-            public RefreshGrant refresh(String refreshToken) {
-                return new RefreshGrant("transient-access", Optional.empty(), account, SCOPES);
+            public IssuedRefreshTokens refresh(String refreshToken) {
+                return issuedRefresh("transient-access", Optional.empty(), account, SCOPES);
             }
 
             @Override
@@ -334,8 +392,8 @@ class HubSpotOAuthLifecycleIntegrationTest {
                 installationStore.finalizeInstallation(account, "refresh", SCOPES);
         HubSpotOAuthGateway gateway = new StubGateway() {
             @Override
-            public RefreshGrant refresh(String refreshToken) {
-                return new RefreshGrant("transient-access", Optional.empty(), account, SCOPES);
+            public IssuedRefreshTokens refresh(String refreshToken) {
+                return issuedRefresh("transient-access", Optional.empty(), account, SCOPES);
             }
         };
         HubSpotUninstallService uninstallService = new HubSpotUninstallService(
@@ -352,6 +410,44 @@ class HubSpotOAuthLifecycleIntegrationTest {
     }
 
     @Test
+    void failedIntrospectionPreventsProviderUninstall() {
+        String account = uniqueAccount();
+        HubSpotInstallationStore.FinalizedInstallation installed =
+                installationStore.finalizeInstallation(account, "refresh", SCOPES);
+        java.util.concurrent.atomic.AtomicInteger uninstallCalls = new java.util.concurrent.atomic.AtomicInteger();
+        HubSpotOAuthGateway gateway = new StubGateway() {
+            @Override
+            public IssuedRefreshTokens refresh(String refreshToken) {
+                return issuedRefresh("transient-access", Optional.empty(), account, SCOPES);
+            }
+
+            @Override
+            public AccessTokenMetadata introspectAccessToken(String accessToken) {
+                throw new HubSpotProviderUnavailableException(
+                        HubSpotOAuthFailureCategory.TOKEN_INTROSPECTION_PROVIDER_UNAVAILABLE);
+            }
+
+            @Override
+            public void uninstall(String accessToken) {
+                uninstallCalls.incrementAndGet();
+            }
+        };
+        HubSpotUninstallService uninstallService = new HubSpotUninstallService(
+                connectionService,
+                new HubSpotAccessTokenProvider(credentialService, gateway),
+                gateway,
+                credentialService);
+
+        assertThatThrownBy(() -> uninstallService.uninstall(
+                installed.tenantId(), installed.connectionId()))
+                .isInstanceOf(HubSpotProviderUnavailableException.class);
+
+        assertThat(uninstallCalls).hasValue(0);
+        assertThat(connection(account).status()).isEqualTo(ConnectionStatus.ACTIVE);
+        assertThat(credentialService.load(connection(account)).refreshToken()).isEqualTo("refresh");
+    }
+
+    @Test
     void wrongTenantCannotUninstallAnotherTenantsConnection() {
         String account = uniqueAccount();
         HubSpotInstallationStore.FinalizedInstallation installed =
@@ -359,9 +455,9 @@ class HubSpotOAuthLifecycleIntegrationTest {
         java.util.concurrent.atomic.AtomicInteger providerCalls = new java.util.concurrent.atomic.AtomicInteger();
         HubSpotOAuthGateway gateway = new StubGateway() {
             @Override
-            public RefreshGrant refresh(String refreshToken) {
+            public IssuedRefreshTokens refresh(String refreshToken) {
                 providerCalls.incrementAndGet();
-                return new RefreshGrant("access", Optional.empty(), account, SCOPES);
+                return issuedRefresh("access", Optional.empty(), account, SCOPES);
             }
         };
         HubSpotUninstallService uninstallService = new HubSpotUninstallService(
@@ -385,7 +481,7 @@ class HubSpotOAuthLifecycleIntegrationTest {
         HubSpotAccessTokenProvider provider = new HubSpotAccessTokenProvider(
                 credentialService, new StubGateway() {
                     @Override
-                    public RefreshGrant refresh(String refreshToken) {
+                    public IssuedRefreshTokens refresh(String refreshToken) {
                         throw new HubSpotProviderUnavailableException();
                     }
                 });
@@ -428,16 +524,16 @@ class HubSpotOAuthLifecycleIntegrationTest {
         new java.security.SecureRandom().nextBytes(hash);
         Instant now = Instant.parse("2026-09-23T10:00:00Z");
         stateStore.store(hash, UUID.randomUUID(), now, now.plusSeconds(600));
-        Callable<OAuthStateStore.ConsumptionResult> consume = () -> stateStore.consume(hash, now.plusSeconds(1));
+        Callable<OAuthStateStore.Consumption> consume = () -> stateStore.consume(hash, now.plusSeconds(1));
 
-        java.util.List<OAuthStateStore.ConsumptionResult> results;
+        java.util.List<OAuthStateStore.Consumption> results;
         try (var executor = Executors.newFixedThreadPool(2)) {
             var first = executor.submit(consume);
             var second = executor.submit(consume);
             results = java.util.List.of(first.get(), second.get());
         }
 
-        assertThat(results).containsExactlyInAnyOrder(
+        assertThat(results).extracting(OAuthStateStore.Consumption::result).containsExactlyInAnyOrder(
                 OAuthStateStore.ConsumptionResult.CONSUMED,
                 OAuthStateStore.ConsumptionResult.REPLAYED);
     }
@@ -496,14 +592,33 @@ class HubSpotOAuthLifecycleIntegrationTest {
 
     private abstract static class StubGateway implements HubSpotOAuthGateway {
 
+        private AccessTokenMetadata metadata;
+
         @Override
-        public AuthorizationGrant exchangeAuthorizationCode(String authorizationCode) {
+        public IssuedAuthorizationTokens exchangeAuthorizationCode(String authorizationCode) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public RefreshGrant refresh(String refreshToken) {
+        public IssuedRefreshTokens refresh(String refreshToken) {
             throw new UnsupportedOperationException();
+        }
+
+        final IssuedRefreshTokens issuedRefresh(
+                String accessToken,
+                Optional<String> replacementRefreshToken,
+                String account,
+                Set<String> scopes) {
+            metadata = new AccessTokenMetadata(account, scopes);
+            return new IssuedRefreshTokens(accessToken, replacementRefreshToken);
+        }
+
+        @Override
+        public AccessTokenMetadata introspectAccessToken(String accessToken) {
+            if (metadata == null) {
+                throw new IllegalStateException("Test gateway did not prepare token metadata");
+            }
+            return metadata;
         }
 
         @Override

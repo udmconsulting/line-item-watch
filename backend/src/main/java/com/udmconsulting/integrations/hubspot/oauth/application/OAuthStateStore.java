@@ -7,7 +7,7 @@ public interface OAuthStateStore {
 
     void store(byte[] stateHash, UUID correlationId, Instant createdAt, Instant expiresAt);
 
-    ConsumptionResult consume(byte[] stateHash, Instant consumedAt);
+    Consumption consume(byte[] stateHash, Instant consumedAt);
 
     void deleteRetainedBefore(Instant retentionThreshold);
 
@@ -16,5 +16,8 @@ public interface OAuthStateStore {
         INVALID,
         EXPIRED,
         REPLAYED
+    }
+
+    record Consumption(ConsumptionResult result, UUID correlationId) {
     }
 }

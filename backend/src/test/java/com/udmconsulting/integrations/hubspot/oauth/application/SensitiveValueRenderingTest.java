@@ -31,11 +31,11 @@ class SensitiveValueRenderingTest {
         PlatformConnectionId connectionId = PlatformConnectionId.newId();
         Set<String> scopes = Set.of("scope");
 
-        assertThat(new HubSpotOAuthGateway.AuthorizationGrant(
-                access, refresh, "account", scopes).toString())
+        assertThat(new HubSpotOAuthGateway.IssuedAuthorizationTokens(
+                access, refresh).toString())
                 .doesNotContain(access, refresh);
-        assertThat(new HubSpotOAuthGateway.RefreshGrant(
-                access, Optional.of(refresh), "account", scopes).toString())
+        assertThat(new HubSpotOAuthGateway.IssuedRefreshTokens(
+                access, Optional.of(refresh)).toString())
                 .doesNotContain(access, refresh);
         assertThat(new HubSpotAccessTokenProvider.TransientAccessGrant(
                 access, connectionId, 3).toString())
