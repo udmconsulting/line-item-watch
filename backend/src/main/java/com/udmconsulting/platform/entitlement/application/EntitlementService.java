@@ -31,6 +31,12 @@ public final class EntitlementService {
         return entitlementStore.isEnabled(entitlement.tenantId(), entitlement.productModule());
     }
 
+    public boolean lockEnabledForCommit(TenantId tenantId, ProductModule productModule) {
+        TenantEntitlement entitlement = entitlement(tenantId, productModule);
+        return entitlementStore.isEnabledForCommit(
+                entitlement.tenantId(), entitlement.productModule());
+    }
+
     private static TenantEntitlement entitlement(
             TenantId tenantId, ProductModule productModule) {
         return new TenantEntitlement(tenantId, productModule);

@@ -16,9 +16,14 @@ import java.util.UUID;
 @Entity
 @Table(
         name = "platform_connection",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uq_platform_connection_provider_account",
-                columnNames = {"provider", "external_account_id"}),
+        uniqueConstraints = {
+            @UniqueConstraint(
+                    name = "uq_platform_connection_provider_account",
+                    columnNames = {"provider", "external_account_id"}),
+            @UniqueConstraint(
+                    name = "uq_platform_connection_tenant_id_id",
+                    columnNames = {"tenant_id", "id"})
+        },
         indexes = @Index(name = "idx_platform_connection_tenant_id", columnList = "tenant_id"))
 class PlatformConnectionEntity {
 

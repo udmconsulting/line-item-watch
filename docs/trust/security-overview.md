@@ -4,7 +4,7 @@ This is an engineering posture document, not marketing or a compliance claim.
 
 ## Current / proven
 
-- The backend persists application-generated Tenant/connection identity, provider account identity, connection lifecycle, Product Module entitlement, OAuth state metadata, and encrypted HubSpot refresh credentials in PostgreSQL.
+- The backend persists application-generated Tenant/connection identity, provider account identity, connection lifecycle, Product Module entitlement, OAuth state metadata, encrypted HubSpot refresh credentials, and minimized `LINE_ITEM_WATCH` baseline/latest business state in PostgreSQL.
 - Refresh credentials use AES-256-GCM with random nonces and authenticated provider/connection context. The 256-bit key and key ID are external mandatory configuration; plaintext refresh credentials exist only transiently during provider operations.
 - OAuth state stores a SHA-256 digest rather than the browser value, expires after 10 minutes, is consumed atomically, and becomes eligible for bounded opportunistic deletion after a 24-hour replay-detection period.
 - Access tokens, authorization codes, OAuth client secrets, encryption keys, raw token responses, and decrypted credentials are not persisted. Access tokens are neither cached nor shared between operations.
@@ -12,7 +12,9 @@ This is an engineering posture document, not marketing or a compliance claim.
 - A durable, monotonically increasing Platform Connection credential generation prevents stale invalid-grant, replacement, reinstall, scope-loss, or uninstall results from matching newer credentials, including across deletion/reinstall.
 - Replacement refresh credentials are encrypted and committed through the generation guard before access-token introspection, so a transient introspection failure cannot discard the provider's latest refresh credential. Authoritative unusable-token transitions remain generation-conditional.
 - Public install/callback endpoints return fixed non-reflective HTML with `no-store`, `no-cache`, `no-referrer`, `nosniff`, and restrictive CSP controls. Provider endpoints and non-local callbacks require HTTPS; local development uses an explicit localhost exception.
-- Tenant/connection constraints, encrypted persistence, lifecycle transitions, concurrent installation, optimistic credential races, HTTP contracts, and negative isolation are covered by automated tests.
+- Tenant/connection constraints, encrypted persistence, lifecycle transitions, concurrent installation, optimistic credential races, baseline provider contracts, atomic snapshots, and negative isolation are covered by automated tests.
+- Module records carry Tenant and Platform Connection provenance enforced by composite PostgreSQL foreign keys. Baseline synchronization accepts internal Tenant/connection identity, requires an active HubSpot connection and Tenant-specific entitlement twice around provider I/O, and never infers ownership from a Deal or Line Item ID.
+- The baseline adapter validates selected provider values and persists neither full provider payloads nor OAuth material. It excludes the calculated billing-start type and any unverified currency property. Its completion log contains only internal Tenant/connection IDs and counts, not Deal/Line Item IDs or commercial values.
 - The feasibility probes require credentials through environment variables rather than committed literals.
 - The accepted spike demonstrated read/history and webhook feasibility; it did not establish production security controls.
 - Architectural boundaries are checked with ArchUnit, while broader Private Beta security and operational controls remain requirements rather than implemented claims.

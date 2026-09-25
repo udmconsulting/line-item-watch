@@ -15,7 +15,7 @@ The design goal is **hard boundaries, simple runtime**. Architectural separabili
 - Cross-module contracts or events are introduced only for a demonstrated collaboration requirement.
 - Core business rules stay out of controllers, webhook handlers, provider adapters, and persistence adapters.
 
-The implemented Java root is `com.udmconsulting`. Platform Core capabilities use `platform.tenant`, `platform.connection`, `platform.module`, and `platform.entitlement`; each persistence adapter sits below its owner in `infrastructure.persistence`. Product implementations will use `modules.<module>` and provider adapters will use `integrations.<provider>` only when real behavior exists. ArchUnit enforces the currently meaningful inward-dependency and cycle rules.
+The implemented Java root is `com.udmconsulting`. Platform Core capabilities use `platform.tenant`, `platform.connection`, `platform.module`, and `platform.entitlement`; each persistence adapter sits below its owner in `infrastructure.persistence`. `modules.lineitemwatch` now owns its domain, application port/use case, and PostgreSQL adapter. `integrations.hubspot.lineitemwatch` implements the focused provider read port and maps into module values. ArchUnit enforces the currently meaningful inward-dependency and cycle rules, including that modules do not depend on integrations.
 
 ## Activation
 

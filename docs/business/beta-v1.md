@@ -37,4 +37,4 @@ Commercial Beta success criteria, service levels, pricing, retention periods, ho
 
 ## Current implementation progress
 
-HubSpot OAuth install/callback, account-to-Tenant/Platform Connection resolution, encrypted refresh-credential storage, on-demand refresh, connection lifecycle state, `LINE_ITEM_WATCH` entitlement activation, and an internal uninstall service are implemented. A customer-facing disconnect surface, recurring HubSpot reads, webhook ingress, baseline/snapshot processing, audit reconstruction, and Deal UI remain future slices.
+HubSpot OAuth install/callback, account-to-Tenant/Platform Connection resolution, encrypted refresh-credential storage, on-demand refresh, connection lifecycle state, `LINE_ITEM_WATCH` entitlement activation, an internal uninstall service, and explicit one-Deal baseline/latest snapshot persistence are implemented. The baseline use case is an internal application service rather than a public API or scheduled scan. A customer-facing disconnect surface, webhook ingress, recurring reconciliation, audit reconstruction, deletion processing, and Deal UI remain future slices.

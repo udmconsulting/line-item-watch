@@ -8,9 +8,23 @@
 
 Avoid tests written only to increase coverage. The backend uses JUnit 6, Spring Boot test support, PostgreSQL 18.6 through Testcontainers, and ArchUnit. Run the full suite from `backend/` with `./mvnw verify`; Docker is required for persistence tests. H2 or mocked PostgreSQL behavior must not replace tests of migrations, constraints, or PostgreSQL-specific queries.
 
-The suite verifies Liquibase/Hibernate startup, foundation isolation and constraints, OAuth state hashing/expiry/replay/bounded cleanup, AES-GCM authenticated encryption and tamper rejection, current `2026-09` token and introspection paths/forms, hardened fixed MVC outcomes, install/reinstall, introspected client/account/scope validation, entitlement activation, encrypted-only persistence, on-demand refresh, generation compare-and-advance, wrong-Tenant rejection, and uninstall. The provider regression fixture deliberately omits `hub_id` and `scopes` from token issuance and supplies them only through introspection. PostgreSQL race tests cover ordinary generation advancement plus invalid-grant, replacement, stale introspection, scope-loss, and uninstall responses after credential replacement or deletion/reinstall.
+The suite verifies Liquibase/Hibernate startup, foundation and module isolation/constraints, OAuth state hashing/expiry/replay/bounded cleanup, AES-GCM authenticated encryption and tamper rejection, current `2026-09` token and introspection paths/forms, hardened fixed MVC outcomes, install/reinstall, introspected client/account/scope validation, entitlement activation, encrypted-only persistence, on-demand refresh, generation compare-and-advance, wrong-Tenant rejection, and uninstall. It also covers normalized snapshot values, immutable baseline/replaceable latest semantics, explicit null clearing, complete association replacement, atomic rollback, idempotent/concurrent inserts, equal/out-of-order observations, cross-Tenant provenance rejection, same external ID across connections, exact focused HubSpot paths/property selection, association pagination, HTTP 207/partial/error-envelope rejection, malformed commercial fields and timestamps, and retryable versus terminal provider failures. The provider regression fixture deliberately omits `hub_id` and `scopes` from token issuance and supplies them only through introspection. PostgreSQL race tests cover ordinary generation advancement plus invalid-grant, replacement, stale introspection, scope-loss, uninstall responses after credential replacement or deletion/reinstall, concurrent first baseline writes, and commit-guard rejection after a winning disconnect, reauthentication transition, or entitlement removal. The three commit-guard tests hold the winning mutation uncommitted, identify its PostgreSQL backend PID, and require PostgreSQL to report the baseline backend as lock-blocked by that PID before permitting the mutation to commit.
 
 Live HubSpot acceptance is intentionally opt-in and is not part of Maven verification. It requires an approved isolated account, environment-supplied secrets, matching callback configuration, and an explicit cleanup plan.
+
+### Live one-Deal baseline acceptance
+
+`HubSpotLiveBaselineAcceptanceIT` is a non-destructive but customer-data-reading harness for the approved developer-test account and feasibility Deal. Maven Surefire does not select its `*IT` name during normal `./mvnw verify`. It fails before provider access unless `HUBSPOT_LIVE_BASELINE_CONFIRM=149377304:521984899298` exactly matches the approved account and Deal.
+
+Run it only from `backend/` with the `local` Spring profile, real environment-supplied HubSpot OAuth and credential-encryption configuration, the approved local PostgreSQL installation, and explicit authorization for live reads and local snapshot writes:
+
+```shell
+SPRING_PROFILES_ACTIVE=local \
+HUBSPOT_LIVE_BASELINE_CONFIRM=149377304:521984899298 \
+./mvnw -Dtest=HubSpotLiveBaselineAcceptanceIT test
+```
+
+The harness resolves the installed account through Platform Core, confirms the active connection and entitlement, reads Deal `521984899298` through production OAuth/provider wiring, confirms feasibility Line Item `486464823492`, invokes baseline synchronization twice, and verifies normalized latest values, baseline/latest rows, complete known Deal associations, Tenant/connection provenance, rerun uniqueness, and the absence of token/secret/raw-JSON persistence columns. It prints only counts and pass indicators, never credentials or commercial values. It still refreshes credentials on demand and reads live provider/customer data, so it must not be run casually or against production customer installations.
 
 ### Live on-demand refresh acceptance
 

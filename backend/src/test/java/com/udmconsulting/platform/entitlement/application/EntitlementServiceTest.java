@@ -49,6 +49,11 @@ class EntitlementServiceTest {
             return entitlements.contains(new Key(tenantId, productModule));
         }
 
+        @Override
+        public boolean isEnabledForCommit(TenantId tenantId, ProductModule productModule) {
+            return isEnabled(tenantId, productModule);
+        }
+
         private record Key(TenantId tenantId, ProductModule productModule) {
         }
     }
