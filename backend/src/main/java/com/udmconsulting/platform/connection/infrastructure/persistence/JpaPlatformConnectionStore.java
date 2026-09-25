@@ -8,6 +8,7 @@ import com.udmconsulting.platform.connection.domain.Provider;
 import com.udmconsulting.platform.tenant.domain.TenantId;
 import java.util.Optional;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public class JpaPlatformConnectionStore implements PlatformConnectionStore {
@@ -40,6 +41,14 @@ public class JpaPlatformConnectionStore implements PlatformConnectionStore {
     public Optional<PlatformConnection> findByTenantIdAndId(
             TenantId tenantId, PlatformConnectionId connectionId) {
         return repository.findByTenantIdAndId(tenantId.value(), connectionId.value())
+                .map(JpaPlatformConnectionStore::toDomain);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<PlatformConnection> findByTenantIdAndIdForCommit(
+            TenantId tenantId, PlatformConnectionId connectionId) {
+        return repository.findByTenantIdAndIdForCommit(tenantId.value(), connectionId.value())
                 .map(JpaPlatformConnectionStore::toDomain);
     }
 

@@ -3,3 +3,5 @@ databaseChangeLog:
       file: db/changelog/changes/001-platform-foundation.sql
   - include:
       file: db/changelog/changes/002-hubspot-oauth-lifecycle.sql
+  - include:
+      file: db/changelog/changes/003-line-item-watch-baseline.sql

@@ -16,4 +16,11 @@ public interface PlatformConnectionStore {
 
     Optional<PlatformConnection> findByTenantIdAndId(
             TenantId tenantId, PlatformConnectionId connectionId);
+
+    /**
+     * Loads the Tenant-owned connection while holding a database shared row lock for the
+     * caller's transaction. Callers use this to prevent lifecycle updates until commit.
+     */
+    Optional<PlatformConnection> findByTenantIdAndIdForCommit(
+            TenantId tenantId, PlatformConnectionId connectionId);
 }

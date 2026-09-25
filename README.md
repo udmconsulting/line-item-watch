@@ -2,7 +2,7 @@
 
 Line Item Watch is the first Product Module of a planned modular B2B SaaS. Its initial purpose is to give HubSpot users a useful audit history for Deal Line Item changes: what changed, old and new values, when, who where available, and creation/removal behavior.
 
-The repository contains the accepted HubSpot feasibility probes and a production backend foundation. The backend now provides internal Tenant and Platform Connection identity, module entitlements, HubSpot OAuth installation, encrypted refresh-credential lifecycle, on-demand token refresh, and an internal uninstall capability. Webhooks and Line Item Watch business processing are not implemented yet.
+The repository contains the accepted HubSpot feasibility probes and a production backend foundation. The backend now provides internal Tenant and Platform Connection identity, module entitlements, HubSpot OAuth installation, encrypted refresh-credential lifecycle, on-demand token refresh, an internal uninstall capability, and the first `LINE_ITEM_WATCH` business slice: explicit one-Deal baseline synchronization with immutable baseline and replaceable latest snapshots. Webhooks, audit reconstruction, scheduled reconciliation, and Line Item Watch UI are not implemented yet.
 
 ## Backend foundation
 

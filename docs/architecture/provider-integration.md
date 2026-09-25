@@ -20,7 +20,7 @@ provider + external account identity
   -> business processing
 ```
 
-Provider-backed customer records will retain `tenant_id`, `connection_id`, and external object or event identity as appropriate. The foundation contains no provider-backed business records yet. When the first such table is added, its migration must prevent pairing a Tenant with another Tenant's Platform Connection through an appropriate supporting uniqueness and composite foreign-key structure. External IDs and deduplication keys are not globally unique and must be connection/provider scoped.
+Provider-backed customer records retain `tenant_id`, `connection_id`, and external object or event identity as appropriate. The first module tables implement this invariant with `(tenant_id, id)` uniqueness on Platform Connection and composite foreign keys through Line Item identity, snapshots, and Deal associations. External IDs and future deduplication keys are not globally unique and must be connection/provider scoped.
 
 ## HubSpot adapter requirements
 
@@ -47,6 +47,16 @@ Provider-backed customer records will retain `tenant_id`, `connection_id`, and e
 
 Token issuance, token introspection, authenticated refresh-token revocation, and uninstall calls use the date-versioned `2026-09` HubSpot endpoints with bounded configurable network timeouts. Provider calls occur outside database transactions; only short state-consumption, installation-finalization, and generation-checked mutations are transactional.
 
+## Implemented baseline read adapter
+
+The focused `LineItemBaselineSource` implementation obtains one validated transient access token through the lifecycle above, verifies the requested Deal through `GET /crm/objects/2026-09/deals/{id}`, reads complete paginated Deal-to-Line-Item and Line-Item-to-Deal sets through `/crm/associations/2026-09/.../batch/read`, and reads each Line Item through `GET /crm/objects/2026-09/line_items/{id}`. Every association page must be an HTTP 200, `COMPLETE`, error-free batch response; HTTP 207, incomplete/canceled status, positive `numErrors`, non-empty `errors`, or a malformed envelope fails the synchronization without salvaging partial results. It does not enumerate the account or use a generic CRM client.
+
+The selected direct property contract is `name`, `quantity`, `price`, `discount`, `hs_discount_percentage`, `recurringbillingfrequency`, `hs_recurring_billing_start_date`, `hs_billing_start_delay_days`, `hs_billing_start_delay_months`, and `hs_recurring_billing_period`. Text, decimals, dates, ISO-8601 periods, timestamps, identities, archived state, and association shapes are validated before module persistence. Unknown billing-frequency strings remain provider-controlled normalized text rather than a brittle enum.
+
+Billing start derives only from the three direct date/day/month inputs, which must not conflict. `hs_billing_start_delay_type` is provider-calculated validation context and is not requested or persisted. The current public specification available during P.3 did not establish `hs_line_item_currency_code` as the exact authoritative Line Item currency property; no currency field is requested, invented, substituted, or included in the module contract.
+
+A missing requested Deal is terminal. A Line Item disappearing after association discovery, association-state changes, rate limiting, server failures, timeouts, and network failures are retryable outcomes; authorization and malformed-contract failures are terminal. Messages are fixed and exclude tokens and provider payloads. P.3 supplies classification but no retry loop.
+
 ## Two different extension operations
 
 ### Adding a Product Module
@@ -61,4 +71,4 @@ One operation does not imply the other. Follow the separate checklists in [Addin
 
 ## Decisions deferred
 
-Production key-management service/rotation, recurring HubSpot reads, webhook authentication/mapping, access-token caching/coalescing, public disconnect UX, future providers, and provider-specific reconciliation limits remain deferred. HubSpot adapter code lives under `com.udmconsulting.integrations.hubspot` and depends inward on focused application/Platform Core boundaries.
+Production key-management service/rotation, recurring HubSpot reads, webhook authentication/mapping, history-based audit reconstruction, access-token caching/coalescing, public disconnect UX, future providers, and provider-specific reconciliation limits remain deferred. HubSpot adapter code lives under `com.udmconsulting.integrations.hubspot` and depends inward on focused application/Platform Core boundaries.

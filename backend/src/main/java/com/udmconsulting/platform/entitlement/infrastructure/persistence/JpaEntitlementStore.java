@@ -33,4 +33,11 @@ public class JpaEntitlementStore implements EntitlementStore {
         return repository.existsById(new TenantEntitlementKey(
                 tenantId.value(), productModule.name()));
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isEnabledForCommit(TenantId tenantId, ProductModule productModule) {
+        return repository.findByIdForCommit(new TenantEntitlementKey(
+                tenantId.value(), productModule.name())).isPresent();
+    }
 }

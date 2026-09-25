@@ -10,4 +10,10 @@ public interface EntitlementStore {
     void disable(TenantId tenantId, ProductModule productModule);
 
     boolean isEnabled(TenantId tenantId, ProductModule productModule);
+
+    /**
+     * Tests row-presence entitlement while holding a database shared row lock for the caller's
+     * transaction, preventing a concurrent disable from deleting the row before commit.
+     */
+    boolean isEnabledForCommit(TenantId tenantId, ProductModule productModule);
 }

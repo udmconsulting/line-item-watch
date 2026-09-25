@@ -42,8 +42,7 @@ class ArchitectureTest {
     @ArchTest
     static final ArchRule MODULES_DO_NOT_DEPEND_ON_INTEGRATIONS = noClasses()
             .that().resideInAPackage("..modules..")
-            .should().dependOnClassesThat().resideInAPackage("..integrations..")
-            .allowEmptyShould(true);
+            .should().dependOnClassesThat().resideInAPackage("..integrations..");
 
     @ArchTest
     static final ArchRule PERSISTENCE_TYPES_STAY_IN_PERSISTENCE_PACKAGES = classes()

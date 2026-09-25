@@ -43,4 +43,11 @@ public final class PlatformConnectionService {
                 Objects.requireNonNull(tenantId, "tenantId must not be null"),
                 Objects.requireNonNull(connectionId, "connectionId must not be null"));
     }
+
+    public Optional<PlatformConnection> lockForCommit(
+            TenantId tenantId, PlatformConnectionId connectionId) {
+        return connectionStore.findByTenantIdAndIdForCommit(
+                Objects.requireNonNull(tenantId, "tenantId must not be null"),
+                Objects.requireNonNull(connectionId, "connectionId must not be null"));
+    }
 }

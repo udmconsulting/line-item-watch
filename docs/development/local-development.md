@@ -2,7 +2,7 @@
 
 ## Repository status
 
-The repository contains HubSpot project metadata, read-only feasibility probes, and one backend Maven module under `backend/`. The backend implements Platform Core identity/entitlements plus HubSpot OAuth installation, encrypted refresh credentials, on-demand refresh, and internal uninstall. It exposes install/callback HTTP endpoints but no business API or disconnect endpoint.
+The repository contains HubSpot project metadata, read-only feasibility probes, and one backend Maven module under `backend/`. The backend implements Platform Core identity/entitlements, HubSpot OAuth installation, encrypted refresh credentials, on-demand refresh, internal uninstall, and the internal one-Deal `LINE_ITEM_WATCH` baseline use case. It exposes install/callback HTTP endpoints but no public baseline, business administration, or disconnect endpoint.
 
 ## Prerequisites
 
@@ -42,7 +42,7 @@ cd backend
 ./mvnw verify
 ```
 
-The suite starts PostgreSQL 18.6 through Testcontainers, applies Liquibase migrations, validates with Hibernate, exercises OAuth/credential concurrency, persistence and isolation, provider HTTP contracts, MVC behavior, and ArchUnit rules. It does not call live HubSpot or use the Compose database.
+The suite starts PostgreSQL 18.6 through Testcontainers, applies Liquibase migrations, validates with Hibernate, exercises OAuth/credential concurrency, baseline/latest persistence and isolation, provider HTTP contracts, MVC behavior, and ArchUnit rules. It does not call live HubSpot or use the Compose database. The guarded P.3 live baseline harness and its exact invocation are documented in [Testing](testing.md); do not run it without separate live-provider authorization.
 
 ## Verified commands
 
