@@ -110,6 +110,9 @@ class RestHubSpotLineItemBaselineSourceTest {
 
         assertThat(result.lineItems()).hasSize(1);
         var item = result.lineItems().getFirst();
+        assertThat(item.lineItemId()).isEqualTo(new ProviderObjectId("486464823492"));
+        assertThat(item.associatedDealIds())
+                .containsExactly(new ProviderObjectId("521984899298"));
         assertThat(item.unitPrice()).isEqualByComparingTo("200.00");
         assertThat(item.billingStart().delayUnit()).isEqualTo(BillingStart.DelayUnit.DAYS);
         assertThat(item.billingStart().delayCount()).isEqualTo(14);
@@ -118,6 +121,84 @@ class RestHubSpotLineItemBaselineSourceTest {
         assertThat(RestHubSpotLineItemBaselineSource.REQUESTED_PROPERTIES)
                 .doesNotContain("hs_billing_start_delay_type", "hs_line_item_currency_code");
         server.verify();
+    }
+
+    @Test
+    void acceptsIntegralNumericObjectIdsAcrossCrmObjectsAndBothAssociationDirections() {
+        expectGet("/crm/objects/2026-09/deals/1", """
+                {"id":1,"archived":false}
+                """);
+        expectAssociationPageWithWireIds(
+                "/crm/associations/2026-09/deals/line_items/batch/read", "1", "1", "2");
+        expectLineItemWithWireId("2", "2", "{}", "2026-09-20T11:30:00Z");
+        expectAssociationPageWithWireIds(
+                "/crm/associations/2026-09/line_items/deals/batch/read", "2", "2", "1");
+
+        var result = source.readDeal(connection, new ProviderObjectId("1"));
+
+        assertThat(result.lineItems()).singleElement().satisfies(item -> {
+            assertThat(item.lineItemId()).isEqualTo(new ProviderObjectId("2"));
+            assertThat(item.associatedDealIds()).containsExactly(new ProviderObjectId("1"));
+        });
+        server.verify();
+    }
+
+    @Test
+    void preservesLargeIntegralAssociationIdWithoutFloatingPointConversion() {
+        String largeLineItemId = "9007199254740993";
+        expectGet("/crm/objects/2026-09/deals/1", """
+                {"id":"1","archived":false}
+                """);
+        expectAssociationPageWithWireIds(
+                "/crm/associations/2026-09/deals/line_items/batch/read",
+                "1",
+                "\"1\"",
+                largeLineItemId);
+        expectLineItem(largeLineItemId, "{}", "2026-09-20T11:30:00Z");
+        expectAssociationPage(
+                "/crm/associations/2026-09/line_items/deals/batch/read",
+                largeLineItemId,
+                "1");
+
+        var result = source.readDeal(connection, new ProviderObjectId("1"));
+
+        assertThat(result.lineItems())
+                .extracting(item -> item.lineItemId().value())
+                .containsExactly(largeLineItemId);
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"2.0", "2.5", "null", "true", "{}", "[]", "\" \""})
+    void rejectsNonIntegralOrArbitraryDealAssociationTargetIds(String invalidWireId) {
+        expectGet("/crm/objects/2026-09/deals/1", """
+                {"id":"1","archived":false}
+                """);
+        expectAssociationPageWithWireIds(
+                "/crm/associations/2026-09/deals/line_items/batch/read",
+                "1",
+                "\"1\"",
+                invalidWireId);
+
+        assertSanitizedAssociationFailure(false, invalidWireId);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"1.0", "1.5", "null", "false", "{}", "[]", "\" \""})
+    void rejectsNonIntegralOrArbitraryLineItemAssociationTargetIds(String invalidWireId) {
+        expectGet("/crm/objects/2026-09/deals/1", """
+                {"id":"1","archived":false}
+                """);
+        expectAssociationPage(
+                "/crm/associations/2026-09/deals/line_items/batch/read", "1", "2");
+        expectLineItem("2", "{}", "2026-09-20T11:30:00Z");
+        expectAssociationPageWithWireIds(
+                "/crm/associations/2026-09/line_items/deals/batch/read",
+                "2",
+                "\"2\"",
+                invalidWireId);
+
+        assertSanitizedAssociationFailure(false, invalidWireId);
     }
 
     @Test
@@ -375,12 +456,18 @@ class RestHubSpotLineItemBaselineSourceTest {
     }
 
     private void expectLineItem(String lineItemId, String properties, String updatedAt) {
+        expectLineItemWithWireId(
+                lineItemId, "\"" + lineItemId + "\"", properties, updatedAt);
+    }
+
+    private void expectLineItemWithWireId(
+            String lineItemId, String wireId, String properties, String updatedAt) {
         String requested = String.join(",", RestHubSpotLineItemBaselineSource.REQUESTED_PROPERTIES);
         expectGet("/crm/objects/2026-09/line_items/" + lineItemId + "?properties=" + requested,
                 """
-                {"id":"%s","createdAt":"2026-09-01T09:00:00Z",
+                {"id":%s,"createdAt":"2026-09-01T09:00:00Z",
                  "updatedAt":"%s","archived":false,"properties":%s}
-                """.formatted(lineItemId, updatedAt, properties));
+                """.formatted(wireId, updatedAt, properties));
     }
 
     private void expectMalformedLineItem(
@@ -417,13 +504,19 @@ class RestHubSpotLineItemBaselineSourceTest {
     }
 
     private void expectAssociationPage(String path, String sourceId, String targetId) {
+        expectAssociationPageWithWireIds(
+                path, sourceId, "\"" + sourceId + "\"", "\"" + targetId + "\"");
+    }
+
+    private void expectAssociationPageWithWireIds(
+            String path, String sourceId, String wireSourceId, String wireTargetId) {
         server.expect(requestTo(BASE_URL + path))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
                 .andRespond(withSuccess("""
                         {"status":"COMPLETE","numErrors":0,"errors":[],
-                         "results":[{"from":{"id":"%s"},
-                          "to":[{"toObjectId":"%s","associationTypes":[]}]}]}
-                        """.formatted(sourceId, targetId), MediaType.APPLICATION_JSON));
+                         "results":[{"from":{"id":%s},
+                          "to":[{"toObjectId":%s,"associationTypes":[]}]}]}
+                        """.formatted(wireSourceId, wireTargetId), MediaType.APPLICATION_JSON));
     }
 }

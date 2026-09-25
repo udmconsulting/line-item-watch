@@ -164,7 +164,7 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
             }
             JsonNode sourceResult = null;
             for (JsonNode result : results) {
-                String returnedSource = optionalText(result.path("from"), "id");
+                String returnedSource = requiredHubSpotObjectId(result.path("from"), "id");
                 if (sourceId.value().equals(returnedSource)) {
                     if (sourceResult != null) {
                         throw contractFailure();
@@ -183,7 +183,7 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
                 throw contractFailure();
             }
             for (JsonNode target : targets) {
-                ids.add(new ProviderObjectId(pathSegment(requiredText(target, "toObjectId"))));
+                ids.add(new ProviderObjectId(requiredHubSpotObjectId(target, "toObjectId")));
             }
             after = optionalText(sourceResult.path("paging").path("next"), "after");
             if (after != null && !seenCursors.add(after)) {
@@ -307,7 +307,7 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
 
     private void validateObjectIdentity(
             JsonNode object, ProviderObjectId expectedId, String objectName) {
-        if (!expectedId.value().equals(optionalText(object, "id"))) {
+        if (!expectedId.value().equals(requiredHubSpotObjectId(object, "id"))) {
             throw new BaselineSyncException(
                     "HubSpot returned an unexpected " + objectName + " identity", false);
         }
@@ -396,6 +396,29 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
             throw contractFailure();
         }
         return value;
+    }
+
+    private static String requiredHubSpotObjectId(JsonNode object, String field) {
+        if (object == null || object.isMissingNode()) {
+            throw contractFailure();
+        }
+        JsonNode value = object.get(field);
+        if (value == null || value.isNull()) {
+            throw contractFailure();
+        }
+
+        String decoded;
+        if (value.isString()) {
+            decoded = value.stringValue().trim();
+        } else if (value.isIntegralNumber()) {
+            decoded = value.bigIntegerValue().toString();
+        } else {
+            throw contractFailure();
+        }
+        if (decoded.isEmpty()) {
+            throw contractFailure();
+        }
+        return pathSegment(decoded);
     }
 
     private static String optionalText(JsonNode object, String field) {
