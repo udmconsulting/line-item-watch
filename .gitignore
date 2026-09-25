@@ -109,3 +109,7 @@ dist
 .tern-port
 
 hubspot.config.yml
+
+# Developer-local Spring Boot secrets (templates remain tracked)
+/backend/config/application-local.yaml
+/backend/config/application-local.yml

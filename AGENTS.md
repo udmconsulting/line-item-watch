@@ -55,6 +55,12 @@ Every task must:
 - Add meaningful tests at the smallest appropriate level. Include tenant isolation, retries/idempotency, provider/persistence boundaries, and security-sensitive behavior when relevant.
 - Add structured, privacy-aware observability and operator alerts for operationally significant behavior.
 
+### Local and production secrets
+
+- Durable local-development secrets belong only in the Git-ignored `backend/config/application-local.yaml`; tracked configuration and its example file contain placeholders or environment references only.
+- Do not rely on ephemeral shell-only encryption keys for credentials persisted in the local database. The configured encryption key must remain available for as long as ciphertext created under its key ID exists. Key loss or change requires controlled credential re-establishment; never generate different key material under an existing key ID.
+- Never commit a local secret file. Production secrets remain external runtime configuration and must use a managed mechanism such as Vault, Azure Key Vault, Kubernetes Secrets, or an equivalent selected for the production platform.
+
 ## Security and privacy review
 
 For every implementation task, answer:
