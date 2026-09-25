@@ -11,17 +11,14 @@ The single Maven module under `backend/` uses Java 25, Spring Boot 4.1.1, Spring
 ```sh
 docker compose up -d postgres
 cd backend
-SPRING_PROFILES_ACTIVE=local \
-HUBSPOT_OAUTH_CLIENT_ID=... \
-HUBSPOT_OAUTH_CLIENT_SECRET=... \
-HUBSPOT_OAUTH_REDIRECT_URI=http://localhost:8080/integrations/hubspot/oauth/callback \
-HUBSPOT_CREDENTIAL_KEY_ID=local-key-1 \
-HUBSPOT_CREDENTIAL_ENCRYPTION_KEY=... \
-./mvnw spring-boot:run
+cp config/application-local.example.yaml config/application-local.yaml
+chmod 600 config/application-local.yaml
+# Replace the placeholders in the ignored local file, then run:
+SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
 ./mvnw verify
 ```
 
-The local profile contains only explicit non-production database credentials. OAuth client credentials and the Base64-encoded 32-byte encryption key always come from the environment. Begin a local install at `GET /integrations/hubspot/oauth/install`; see [Local development](docs/development/local-development.md).
+The tracked local profile contains only explicit non-production database credentials. Durable developer-machine secrets belong in the ignored `backend/config/application-local.yaml`; its tracked example contains placeholders only. Production secrets remain external runtime configuration through the existing environment variables. Begin a local install at `GET /integrations/hubspot/oauth/install`; see [Local development](docs/development/local-development.md).
 
 ## Project documentation
 

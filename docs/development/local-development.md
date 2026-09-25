@@ -20,20 +20,23 @@ docker compose up -d postgres
 docker compose ps
 ```
 
-The Compose database publishes PostgreSQL only on the host loopback interface at `127.0.0.1:5433`; `application-local.yml` uses the same port and matching, explicitly non-production credentials. Supply OAuth and encryption configuration from the environment:
+The Compose database publishes PostgreSQL only on the host loopback interface at `127.0.0.1:5433`; the tracked classpath `application-local.yml` uses the same port and matching, explicitly non-production credentials. Local launches run from `backend/`, so Spring Boot automatically loads the external profile-specific file `backend/config/application-local.yaml` when the `local` profile is active.
 
 ```sh
 cd backend
-SPRING_PROFILES_ACTIVE=local \
-HUBSPOT_OAUTH_CLIENT_ID='your-development-client-id' \
-HUBSPOT_OAUTH_CLIENT_SECRET='from-your-secret-store' \
-HUBSPOT_OAUTH_REDIRECT_URI='http://localhost:8080/integrations/hubspot/oauth/callback' \
-HUBSPOT_CREDENTIAL_KEY_ID='local-key-1' \
-HUBSPOT_CREDENTIAL_ENCRYPTION_KEY='base64-encoded-32-byte-key' \
-./mvnw spring-boot:run
+cp config/application-local.example.yaml config/application-local.yaml
+chmod 600 config/application-local.yaml
+# Replace every placeholder in the ignored local file before OAuth operations.
+SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
 ```
 
-Begin installation at `http://localhost:8080/integrations/hubspot/oauth/install`. The HubSpot app configuration must contain the matching callback URL. `HUBSPOT_API_BASE_URL` and `HUBSPOT_AUTHORIZATION_BASE_URL` are optional test overrides; HTTPS is mandatory except for explicit localhost/loopback development endpoints. `HUBSPOT_CONNECT_TIMEOUT` and `HUBSPOT_READ_TIMEOUT` optionally override the bounded `5s` and `20s` defaults. Without the local profile, database variables are also mandatory. Do not place any secret or generated key in repository files or shell history.
+The real local file is Git-ignored and must remain readable only by its developer (`chmod 600`). Its tracked sibling, `application-local.example.yaml`, contains only invalid placeholders and non-secret defaults. Environment variables remain supported and are the production configuration mechanism.
+
+The local credential-encryption key must survive for as long as any local database credential encrypted with that key exists. Losing or changing the key requires controlled local credential re-establishment. Generating a different key under an existing key ID is invalid because the key ID identifies the encryption material used for the persisted ciphertext. Do not rely on ephemeral shell-only keys when local encrypted credentials outlive the shell session.
+
+Begin installation at `http://localhost:8080/integrations/hubspot/oauth/install`. The HubSpot app configuration must contain the matching callback URL. `HUBSPOT_API_BASE_URL` and `HUBSPOT_AUTHORIZATION_BASE_URL` are optional test overrides; HTTPS is mandatory except for explicit localhost/loopback development endpoints. `HUBSPOT_CONNECT_TIMEOUT` and `HUBSPOT_READ_TIMEOUT` optionally override the bounded `5s` and `20s` defaults. Without the local profile, database variables are also mandatory. Never commit, print, or add local secrets to shell startup files.
+
+Production secrets must remain external runtime configuration. Select a managed mechanism such as Vault, Azure Key Vault, Kubernetes Secrets, or an equivalent appropriate to the eventual hosting platform; the production choice remains TBD and production secret values must never be stored in repository configuration.
 
 Run the complete backend verification suite with Docker available:
 

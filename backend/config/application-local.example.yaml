@@ -1,0 +1,15 @@
+# Copy this file to application-local.yaml and keep the copy local and mode 600.
+# Never place real credentials or encryption keys in this tracked template.
+spring:
+  config:
+    activate:
+      on-profile: local
+
+hubspot:
+  oauth:
+    client-id: __SET_LOCAL_CLIENT_ID__
+    client-secret: __SET_LOCAL_CLIENT_SECRET__
+    redirect-uri: http://localhost:8080/integrations/hubspot/oauth/callback
+  credentials:
+    key-id: local-acceptance-2
+    encryption-key: __SET_LOCAL_BASE64_AES_256_KEY__
