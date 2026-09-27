@@ -28,7 +28,7 @@ Provider-backed customer records retain `tenant_id`, `connection_id`, and extern
 - Request least-privilege scopes and document them with each capability.
 - Protect OAuth credentials throughout creation, refresh, revocation, and removal.
 - Validate webhook signatures and treat payloads as untrusted input.
-- Treat a webhook as a signal and provider object/history APIs as authoritative reconstruction where available.
+- Treat a webhook as immutable evidence. Reconstruct locally from complete provider checkpoints and signals; future reconciliation may add authoritative checkpoints where available.
 - Handle errors, rate limits, token failures, and unknown provider-controlled values explicitly and observably.
 - Avoid retaining complete payloads unless a defined product, diagnostic, and retention need justifies it.
 
@@ -67,6 +67,14 @@ Authenticated arrays of 1–100 events are fully parsed before persistence. The 
 
 For each eligible connection, normalized events become module-owned immutable `LineItemChangeSignal` values. A versioned length-prefixed SHA-256 key covers immutable semantic fields, excluding delivery attempt and receipt time. PostgreSQL uniqueness is authoritative. Ingress performs no HubSpot read, requires no OAuth token, mutates no snapshot/audit state, and acknowledges only after each required connection group commits. A later group failure returns a retryable response; already committed groups safely deduplicate on redelivery.
 
+Provider association type IDs and direction are interpreted only in this adapter. The module receives the provider-neutral Line Item/Deal pair and `ADDED` or `REMOVED` action. Distinct directional provider events remain separate immutable evidence, while reconstruction emits semantic relationship transitions only when state actually changes.
+
+## Implemented signal projection
+
+P.5 processing never invokes HubSpot. It combines immutable `BASELINE`, replaceable `OBSERVED` complete checkpoints, and captured immutable signals through one module-owned reconstruction path. P.3 observation persistence invokes that same path after updating checkpoints; it cannot construct or overwrite `LATEST` independently. `LATEST` is therefore a sparse derived projection rather than provider evidence.
+
+The worker is disabled by default. When enabled, it claims PostgreSQL processing rows with leases and `SKIP LOCKED`, serializes work by Tenant/connection/Line Item, rebuilds the complete deterministic history, writes semantic audit/source/Deal context and LATEST, and marks the signal processed in one transaction. No OAuth credential or provider client is present in this processing path.
+
 ## Two different extension operations
 
 ### Adding a Product Module
@@ -81,4 +89,4 @@ One operation does not imply the other. Follow the separate checklists in [Addin
 
 ## Decisions deferred
 
-Production key-management service/rotation, recurring HubSpot reads, webhook signal processing, history-based audit reconstruction, access-token caching/coalescing, public disconnect UX, future providers, and provider-specific reconciliation limits remain deferred. The concrete public webhook target, deployable HubSpot webhook project component, project deployment, and genuine delivery acceptance are also deferred. HubSpot adapter code lives under `com.udmconsulting.integrations.hubspot` and depends inward on focused application/Platform Core boundaries.
+Production key-management service/rotation, recurring HubSpot reconciliation reads, access-token caching/coalescing, public disconnect/recovery UX, future providers, and provider-specific reconciliation limits remain deferred. Controlled P.4 webhook deployment and genuine-delivery acceptance were completed; production hosting/target decisions and repository-safe deployment metadata remain TBD. HubSpot adapter code lives under `com.udmconsulting.integrations.hubspot` and depends inward on focused application/Platform Core boundaries.

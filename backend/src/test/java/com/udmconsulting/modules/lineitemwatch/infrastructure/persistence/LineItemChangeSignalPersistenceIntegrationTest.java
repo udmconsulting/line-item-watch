@@ -141,6 +141,9 @@ class LineItemChangeSignalPersistenceIntegrationTest {
         assertThat(first).isEqualTo(new LineItemChangeSignalStore.CaptureResult(1, 0, true));
         assertThat(duplicate).isEqualTo(new LineItemChangeSignalStore.CaptureResult(0, 1, true));
         assertThat(count()).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM line_item_watch_signal_processing",
+                Long.class)).isEqualTo(2L);
         assertThat(jdbcTemplate.queryForObject("""
                 SELECT property_value
                 FROM line_item_watch_change_signal
@@ -279,6 +282,9 @@ class LineItemChangeSignalPersistenceIntegrationTest {
         assertThat(firstResult.captured() + secondResult.captured()).isEqualTo(1);
         assertThat(firstResult.duplicates() + secondResult.duplicates()).isEqualTo(1);
         assertThat(count()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM line_item_watch_signal_processing",
+                Long.class)).isEqualTo(1L);
     }
 
     @Test

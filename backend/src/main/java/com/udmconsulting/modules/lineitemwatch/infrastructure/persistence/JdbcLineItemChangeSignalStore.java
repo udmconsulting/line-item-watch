@@ -71,7 +71,7 @@ public class JdbcLineItemChangeSignalStore implements LineItemChangeSignalStore 
                 throw new IllegalArgumentException(
                         "signal Tenant/connection provenance does not match the capture group");
             }
-            captured += jdbcTemplate.update(
+            int inserted = jdbcTemplate.update(
                     INSERT_SIGNAL,
                     signal.id(),
                     tenantId.value(),
@@ -89,6 +89,16 @@ public class JdbcLineItemChangeSignalStore implements LineItemChangeSignalStore 
                     signal.associationAction() == null ? null : signal.associationAction().name(),
                     signal.associationTypeId(),
                     signal.associationCategory());
+            captured += inserted;
+            if (inserted == 1) {
+                jdbcTemplate.update("""
+                        INSERT INTO line_item_watch_signal_processing (
+                            signal_id, tenant_id, connection_id, status, next_attempt_at
+                        ) VALUES (?, ?, ?, 'PENDING', CURRENT_TIMESTAMP)
+                        ON CONFLICT (signal_id) DO NOTHING
+                        """,
+                        signal.id(), tenantId.value(), connectionId.value());
+            }
         }
         return new CaptureResult(captured, signals.size() - captured, true);
     }

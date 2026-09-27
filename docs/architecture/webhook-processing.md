@@ -28,16 +28,22 @@ Deduplication is a versioned SHA-256 over length-prefixed normalized immutable f
 
 All events are parsed before writes begin. Eligible events are grouped by connection, and each group gets its own short transaction. That transaction locks and revalidates the Tenant-scoped HubSpot connection and row-presence entitlement before inserts. Unknown, disconnected, reauthentication-required, or unentitled routes create no Tenant or business state. If a later connection group fails, ingress returns `503`; earlier commits remain safe because the retry deduplicates.
 
-## Deferred processing and deployment
+## Implemented P.5 processing
 
-Signal consumption, authoritative history/object reads, snapshot/audit mutation, retry workers, reconciliation, terminal job state, and UI are later work. The backend does not force provider processing into the request transaction.
+Each inserted signal receives a durable `PENDING` processing row in the capture transaction. The opt-in worker claims due rows through PostgreSQL `FOR UPDATE ... SKIP LOCKED`, records a random claim token and bounded lease, and allows unrelated Line Items to proceed concurrently. Projection writes serialize on the module's Tenant/connection/Line Item identity row.
 
-No permanent public HTTPS target has been selected. Therefore no deployable HubSpot webhook `*-hsmeta.json`, project deployment, genuine delivery, or live P.4 acceptance exists. Once a target is selected, runtime `HUBSPOT_WEBHOOK_PUBLIC_URI` and the project component `targetUrl` must be identical. The intended component subscribes to Line Item creation/deletion, the ten monitored Line Item properties, and Line Item↔Deal association changes; exact project metadata must be validated before a separately authorized upload/deployment.
+The pure reconstructor consumes only complete `BASELINE`/`OBSERVED` checkpoints and immutable signals. It does not call HubSpot. The projection repository writes sparse `LATEST`, semantic audit events, all source-evidence links, Deal context, and `PROCESSED` state in one transaction. A rollback leaves no partial projection and an expired claim can be reclaimed.
+
+Retryable failures use bounded exponential backoff. Exhaustion or deterministic invalid evidence becomes `FAILED` with a sanitized error code. A failed signal blocks only later work for that same Line Item; unrelated items remain claimable. P.5 intentionally exposes no customer/admin recovery API. Recovery requires an operator to diagnose and correct the underlying condition, then deliberately restore the durable processing row to retryable state using controlled database tooling; silently skipping the failed fact is forbidden.
+
+Controlled P.4 genuine-delivery acceptance was completed, and its local PostgreSQL evidence is retained for provider-free P.5 acceptance. Production public target/deployment choices are environment-specific and remain outside committed repository configuration.
 
 ## Deletion: MODEL B
 
-The feasibility spike established that a deleted Line Item cannot be reliably read after deletion, including with `archived=true`. The durable deletion signal identifies the event, while the already retained immutable `BASELINE` and replaceable `LATEST` snapshot preserve the last known business state. Future processing will combine these; ingress itself does not reconstruct an audit event.
+The feasibility spike established that a deleted Line Item cannot be reliably read after deletion, including with `archived=true`. The durable deletion signal produces an auditable deletion and freezes the reconstructed final known sparse state. At the same timestamp, `CREATED` establishes presence first, property/association facts apply second, and `DELETED` freezes last. Later cleanup signals remain source evidence and cannot erase the frozen property or Deal state.
+
+`BASELINE` is immutable first complete provider evidence, `OBSERVED` is the replaceable complete provider checkpoint, and `LATEST` is derived only by the shared reconstruction writer used by both observation and signal processing. Equal-time conflicting values for one property have no invented provider order and project as explicitly `UNKNOWN`. Association audits are state transitions: repeated directional `ADDED` or `REMOVED` evidence attaches provenance without a duplicate user-visible transition, while a later opposite action creates a new transition. Provider association type IDs never enter this business rule.
 
 ## Reconciliation
 
-Reconciliation remains a future safety net for missed signals or processing drift, not the primary detector. Its schedule, scope, rate-limit strategy, and recovery behavior are TBD.
+Reconciliation remains a future safety net for missed signals or processing drift, not the primary detector. A future complete provider observation must update `OBSERVED` and invoke the same reconstruction path; it must not write `LATEST` directly. Its schedule, scope, rate-limit strategy, and recovery behavior are TBD.

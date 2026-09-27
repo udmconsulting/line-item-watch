@@ -12,11 +12,11 @@ Retain only the tenant, connection, commercial-item, snapshot, audit, and operat
 
 ### Uninstall or provider disconnect
 
-The implemented internal HubSpot uninstall service calls the provider uninstall API, then removes the local refresh credential and marks the connection `DISCONNECTED` only when the durable credential generation used by the operation is still current. Confirmed invalid/revoked current credentials are removed and marked `REAUTH_REQUIRED`. Every lifecycle mutation advances a generation that survives deletion, so a concurrent reinstall is preserved. Existing `LINE_ITEM_WATCH` baseline/latest records and durable change signals remain attached to the retained Platform Connection after disconnect; webhook routing immediately ignores inactive connections. Their eventual disconnect retention/deletion policy is TBD. A customer-facing disconnect workflow remains TBD.
+The implemented internal HubSpot uninstall service calls the provider uninstall API, then removes the local refresh credential and marks the connection `DISCONNECTED` only when the durable credential generation used by the operation is still current. Confirmed invalid/revoked current credentials are removed and marked `REAUTH_REQUIRED`. Every lifecycle mutation advances a generation that survives deletion, so a concurrent reinstall is preserved. Existing `LINE_ITEM_WATCH` checkpoints, latest projection, durable signals/processing state, and semantic audits remain attached to the retained Platform Connection after disconnect; webhook routing immediately ignores inactive connections. Already captured work can still be processed without provider access. Their eventual disconnect retention/deletion policy is TBD. A customer-facing disconnect workflow remains TBD.
 
 ### Tenant deletion
 
-Deleting a Tenant row cascades to Platform Connections, encrypted credentials, entitlements, and all current `LINE_ITEM_WATCH` identities, snapshots, Deal-association rows, and change signals; direct Platform Connection deletion also cascades its signals. Integration tests verify the ownership constraints. No customer-facing deletion operation exists yet. The complete workflow must identify future audit data, events/jobs, logs where feasible, and backups.
+Deleting a Tenant row cascades to Platform Connections, encrypted credentials, entitlements, and all current `LINE_ITEM_WATCH` identities, snapshots, Deal-association rows, signals, processing state, semantic audits, source provenance, and Deal context; direct Platform Connection deletion follows the same ownership chain. Integration tests verify the constraints. No customer-facing deletion operation exists yet. The complete workflow must also handle logs where feasible and backups.
 
 ### Credentials
 
@@ -28,11 +28,11 @@ Install state expires after 10 minutes. Only its SHA-256 digest and correlation/
 
 ### Audit history and snapshots
 
-The implemented MODEL B foundation retains one immutable `BASELINE` and one replaceable `LATEST` snapshot plus a complete known Deal-association set for each. It does not retain intermediate history, delete records because an object is absent from a scoped Deal read, or yet record provider deletion. These records are customer data. Their retention must balance stated product value, data minimization, customer deletion promises, and any valid contractual/legal requirement. Duration and export/deletion behavior are TBD.
+The implemented MODEL B projection retains immutable first-complete `BASELINE`, replaceable complete `OBSERVED`, sparse derived `LATEST`, and semantic audit history with source UUID provenance and Deal context. Deletion is auditable and freezes the final known state. These records are customer data. Audit history has an explicit product lifecycle: it is deleted with its owning Line Item/connection/Tenant, not as an incidental consequence of raw-signal deletion. Duration, export, and customer-directed deletion behavior are TBD.
 
 ### Webhook change signals
 
-Authenticated ingress retains normalized immutable signals, including exact monitored property text up to 65,535 characters. Keeping the event-time value is necessary because a later deletion can make provider reconstruction impossible. Raw payloads, headers, signatures, secrets/tokens, complete events, and delivery-attempt metadata are not retained. Deduplicated retries never update an existing row. Signal duration, disconnect handling, export, asynchronous processing, and eventual compaction/deletion policy are TBD before external Beta processing.
+Authenticated ingress retains normalized immutable signals, including exact monitored property text up to 65,535 characters. Keeping the event-time value is necessary because a later deletion can make provider reconstruction impossible. Raw payloads, headers, signatures, secrets/tokens, complete events, and provider delivery-attempt metadata are not retained. Deduplicated retries never update an existing row. Processing state follows a signal and is removed if that raw signal is later removed. Audit source rows deliberately store the signal UUID without a signal foreign key; therefore raw retention cannot destructively cascade into semantic history. No raw-signal retention job exists in P.5. Any future policy must process/reconcile eligible evidence first, preserve required audit provenance, and test its product/legal consequences. Exact signal duration, disconnect handling, and export policy remain TBD.
 
 ### Logs and operational records
 
