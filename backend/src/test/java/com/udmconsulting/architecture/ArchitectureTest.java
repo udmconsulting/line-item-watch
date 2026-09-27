@@ -45,6 +45,27 @@ class ArchitectureTest {
             .should().dependOnClassesThat().resideInAPackage("..integrations..");
 
     @ArchTest
+    static final ArchRule PLATFORM_DOES_NOT_DEPEND_ON_PRODUCT_MODULES = noClasses()
+            .that().resideInAPackage("..platform..")
+            .should().dependOnClassesThat().resideInAPackage("..modules..");
+
+    @ArchTest
+    static final ArchRule WEB_CONTROLLERS_DO_NOT_WRITE_MODULE_PERSISTENCE_DIRECTLY = noClasses()
+            .that().haveSimpleNameEndingWith("Controller")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "..modules..infrastructure.persistence..",
+                    "org.springframework.jdbc..",
+                    "org.springframework.data..",
+                    "jakarta.persistence..");
+
+    @ArchTest
+    static final ArchRule WEBHOOK_INGRESS_DOES_NOT_USE_OAUTH_OPERATIONS = noClasses()
+            .that().resideInAPackage("..integrations.hubspot.webhook..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "..integrations.hubspot.oauth.application..",
+                    "..integrations.hubspot.oauth.infrastructure..");
+
+    @ArchTest
     static final ArchRule PERSISTENCE_TYPES_STAY_IN_PERSISTENCE_PACKAGES = classes()
             .that().areAnnotatedWith("jakarta.persistence.Entity")
             .should().resideInAPackage("..infrastructure.persistence..");

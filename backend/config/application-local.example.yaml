@@ -10,6 +10,11 @@ hubspot:
     client-id: __SET_LOCAL_CLIENT_ID__
     client-secret: __SET_LOCAL_CLIENT_SECRET__
     redirect-uri: http://localhost:8080/integrations/hubspot/oauth/callback
+  webhook:
+    enabled: false
+    # When enabled, set an externally reachable HTTPS URI ending in:
+    # /integrations/hubspot/webhooks
+    # Supply public-uri through HUBSPOT_WEBHOOK_PUBLIC_URI.
   credentials:
     key-id: local-acceptance-2
     encryption-key: __SET_LOCAL_BASE64_AES_256_KEY__

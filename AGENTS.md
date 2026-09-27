@@ -7,7 +7,7 @@ This is the canonical execution contract for coding agents in this repository. F
 - `LINE_ITEM_WATCH` is the only defined Product Module.
 - HubSpot is the first external provider; it is not the business domain.
 - The accepted feasibility spike is under `spike/`; do not repeat destructive/live tests without explicit authorization.
-- The backend under `backend/` implements Tenant and Platform Connection identity/lifecycle, Product Module entitlements, PostgreSQL persistence, HubSpot OAuth install/callback, encrypted refresh credentials, on-demand refresh, internal uninstall, and explicit one-Deal `LINE_ITEM_WATCH` baseline synchronization with immutable baseline and replaceable latest snapshots. Webhooks, audit-event reconstruction, asynchronous processing, customer administration/disconnect APIs, UI, and production operations remain unimplemented.
+- The backend under `backend/` implements Tenant and Platform Connection identity/lifecycle, Product Module entitlements, PostgreSQL persistence, HubSpot OAuth install/callback, encrypted refresh credentials, on-demand refresh, internal uninstall, explicit one-Deal `LINE_ITEM_WATCH` baseline synchronization, and authenticated/deduplicated durable HubSpot Line Item change-signal capture. Public webhook target metadata/deployment/live acceptance, signal processing, audit-event reconstruction, customer administration/disconnect APIs, UI, and production operations remain unimplemented.
 - Read [product overview](docs/business/product-overview.md), [Beta scope](docs/business/beta-v1.md), [architecture overview](docs/architecture/system-overview.md), and the relevant development/trust documents before implementation.
 
 ## Before implementation
@@ -43,6 +43,7 @@ Every task must:
 - Document provider identity, external account identity, permissions/scopes, semantics, errors/rate limits, and security/privacy implications.
 - Do not introduce a universal CRM model, generic provider factory, or shared provider interface until a concrete shared use case justifies it.
 - For HubSpot Line Item Watch, webhook delivery is a signal; provider object/history APIs are authoritative reconstruction where available. Do not assume event ordering.
+- The implemented webhook receiver authenticates exact raw bytes against its configured canonical public URI and stores only normalized module signals. Do not derive signature input from request forwarding headers, persist full webhook payloads, or perform provider reads in ingress.
 - Deletion uses accepted MODEL B: initial baseline plus latest known snapshot. Do not redesign it without new evidence and an explicit decision.
 
 ## Coding and configuration rules
@@ -88,6 +89,7 @@ Update documentation in the same task when changing business/module behavior, ar
 - An app component belongs in `src/app`; only one app component is allowed. Marketplace distribution requires OAuth.
 - HubSpot UI extensions use supported `@hubspot/ui-extensions` APIs. Do not assume browser globals or arbitrary components/styles; card/settings external fetch URLs must be permitted in app configuration.
 - A HubSpot webhooks component is provider infrastructure, not a Product Module. Follow current platform restrictions and shared-ingress architecture.
+- Until a real public HTTPS target is selected, do not add a deployable webhook `*-hsmeta.json`, placeholder target URL, localhost target, or temporary tunnel URL. Backend implementation and synthetic tests do not require that target.
 - Prefer an installed HubSpot integration tool over manual CLI changes to HubSpot assets. Uploads, deployments, account changes, authentication, and live provider-data changes require explicit authorization.
 - Consult current official HubSpot documentation when implementing platform components; generated sample guidance is not a substitute for version-specific documentation.
 

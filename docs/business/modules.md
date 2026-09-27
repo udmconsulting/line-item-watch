@@ -4,7 +4,7 @@
 
 A **Product Module** is an independently identifiable customer capability with its own business responsibility. It owns its domain and application logic, module-specific state, APIs or UI exposure, tests, and operational behavior. Activation is determined by a tenant/module entitlement, not by pricing-plan names embedded in product logic.
 
-`LINE_ITEM_WATCH` is currently the only defined module. Its identity is implemented as the closed Platform Core enum `com.udmconsulting.platform.module.domain.ProductModule`; adding a module requires an explicit code change and schema migration. The module owns its Line Item identity and baseline/latest snapshot model under `com.udmconsulting.modules.lineitemwatch`. It can establish state for one explicitly supplied Deal, but change reconstruction, creation/removal processing, and presentation are not implemented yet. No additional modules are specified.
+`LINE_ITEM_WATCH` is currently the only defined module. Its identity is implemented as the closed Platform Core enum `com.udmconsulting.platform.module.domain.ProductModule`; adding a module requires an explicit code change and schema migration. The module owns its Line Item identity, baseline/latest snapshot model, and immutable durable `LineItemChangeSignal` records under `com.udmconsulting.modules.lineitemwatch`. It can establish state for one explicitly supplied Deal and retain authenticated creation, deletion, monitored-property, and Deal-association signals, but change reconstruction, signal processing, audit output, and presentation are not implemented yet. No additional modules are specified.
 
 ## Platform Core and Product Module responsibilities
 
@@ -21,6 +21,8 @@ A Product Module consumes these capabilities. It must not implement tenant resol
 The implemented OAuth installation flow enables `LINE_ITEM_WATCH` by creating the `(Tenant, ProductModule)` entitlement. Row presence means enabled and absence means disabled; no plan, billing source, trial, expiry, or usage state is recorded.
 
 The implemented baseline flow requires that entitlement both before the HubSpot read and inside the short snapshot-persistence transaction. The commit guard holds a shared lock on the entitlement row so disable cannot commit between authorization and snapshot commit. It consumes a focused provider port; module business and persistence code contain no HubSpot DTOs or OAuth mechanics.
+
+The implemented webhook adapter maps authenticated HubSpot payloads into module signals and groups writes by resolved Platform Connection. Each group independently locks and revalidates its Tenant-scoped active HubSpot connection and `LINE_ITEM_WATCH` entitlement in the same short transaction as insert. Database uniqueness makes retry deduplication authoritative. The module signal type has no dependency on HubSpot DTOs, HTTP, signature mechanics, or OAuth tokens.
 
 ## Independence rules
 

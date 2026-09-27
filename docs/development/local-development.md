@@ -2,7 +2,7 @@
 
 ## Repository status
 
-The repository contains HubSpot project metadata, read-only feasibility probes, and one backend Maven module under `backend/`. The backend implements Platform Core identity/entitlements, HubSpot OAuth installation, encrypted refresh credentials, on-demand refresh, internal uninstall, and the internal one-Deal `LINE_ITEM_WATCH` baseline use case. It exposes install/callback HTTP endpoints but no public baseline, business administration, or disconnect endpoint.
+The repository contains HubSpot app project metadata, read-only feasibility probes, and one backend Maven module under `backend/`. The backend implements Platform Core identity/entitlements, HubSpot OAuth installation, encrypted refresh credentials, on-demand refresh, internal uninstall, the internal one-Deal `LINE_ITEM_WATCH` baseline use case, and a conditional authenticated webhook receiver. It exposes install/callback HTTP endpoints but no public baseline, business administration, or disconnect endpoint.
 
 ## Prerequisites
 
@@ -38,6 +38,19 @@ Begin installation at `http://localhost:8080/integrations/hubspot/oauth/install`
 
 Production secrets must remain external runtime configuration. Select a managed mechanism such as Vault, Azure Key Vault, Kubernetes Secrets, or an equivalent appropriate to the eventual hosting platform; the production choice remains TBD and production secret values must never be stored in repository configuration.
 
+### Webhook receiver configuration
+
+Webhook receipt is off by default. When off, no public URI is required and the controller is absent. Synthetic local tests use `https://webhook.example.test/integrations/hubspot/webhooks`; do not configure localhost HTTP as the canonical HubSpot URI.
+
+To enable a deployed receiver, set both:
+
+```text
+HUBSPOT_WEBHOOK_ENABLED=true
+HUBSPOT_WEBHOOK_PUBLIC_URI=https://<real-public-host>/integrations/hubspot/webhooks
+```
+
+The URI must be the exact absolute HTTPS target registered with HubSpot and may not contain user info, query, fragment, or a percent-encoded path. Do not commit the real host, a temporary tunnel, or a fake/placeholder target. No deployable HubSpot webhook component exists until a permanent target is selected and separately authorized for project upload/deployment.
+
 Run the complete backend verification suite with Docker available:
 
 ```sh
@@ -45,7 +58,7 @@ cd backend
 ./mvnw verify
 ```
 
-The suite starts PostgreSQL 18.6 through Testcontainers, applies Liquibase migrations, validates with Hibernate, exercises OAuth/credential concurrency, baseline/latest persistence and isolation, provider HTTP contracts, MVC behavior, and ArchUnit rules. It does not call live HubSpot or use the Compose database. The guarded P.3 live baseline harness and its exact invocation are documented in [Testing](testing.md); do not run it without separate live-provider authorization.
+The suite starts PostgreSQL 18.6 through Testcontainers, applies Liquibase migrations, validates with Hibernate, exercises OAuth/credential concurrency, baseline/latest and change-signal persistence/isolation, deterministic webhook lifecycle races, signature/parser/MVC contracts, provider HTTP contracts, and ArchUnit rules. It does not call live HubSpot or use the Compose database. The guarded P.3 live harnesses are documented in [Testing](testing.md); do not run them without separate live-provider authorization. P.4 genuine delivery acceptance is deferred until a public target exists.
 
 ## Verified commands
 
