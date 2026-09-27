@@ -20,7 +20,7 @@ provider + external account identity
   -> business processing
 ```
 
-Provider-backed customer records retain `tenant_id`, `connection_id`, and external object or event identity as appropriate. The first module tables implement this invariant with `(tenant_id, id)` uniqueness on Platform Connection and composite foreign keys through Line Item identity, snapshots, and Deal associations. External IDs and future deduplication keys are not globally unique and must be connection/provider scoped.
+Provider-backed customer records retain `tenant_id`, `connection_id`, and external object or event identity as appropriate. The module tables implement this invariant with `(tenant_id, id)` uniqueness on Platform Connection and composite foreign keys through Line Item identity, snapshots, Deal associations, and durable change signals. External IDs and deduplication keys are not globally unique and are connection scoped.
 
 ## HubSpot adapter requirements
 
@@ -57,6 +57,16 @@ Billing start derives only from the three direct date/day/month inputs, which mu
 
 A missing requested Deal is terminal. A Line Item disappearing after association discovery, association-state changes, rate limiting, server failures, timeouts, and network failures are retryable outcomes; authorization and malformed-contract failures are terminal. Messages are fixed and exclude tokens and provider payloads. P.3 supplies classification but no retry loop.
 
+## Implemented webhook adapter
+
+`POST /integrations/hubspot/webhooks` exists only when `hubspot.webhook.enabled=true`. The enabled runtime requires one configured absolute canonical HTTPS URI with no user info, query, fragment, or encoded path and with the endpoint suffix. Ingress never trusts `Host`, `Forwarded`, or `X-Forwarded-*` to construct signature input.
+
+The adapter verifies HubSpot v3 HMAC-SHA256 over the exact `POST` method, configured URI, once-read raw body, and unchanged timestamp using the current OAuth client secret. It rejects invalid Base64, non-32-byte signatures, and timestamps outside an absolute five-minute window before parsing JSON. The shared current secret creates an operational rotation limitation: in-flight requests signed with the prior secret can fail after rotation; no undocumented dual-secret grace is assumed and old client secrets are not retained.
+
+Authenticated arrays of 1–100 events are fully parsed before persistence. The adapter normalizes Line Item creation/deletion, the ten baseline properties, and Line Item↔Deal association add/remove in either orientation. Unsupported properties, other object/association types, unknown portals, inactive connections, and unentitled connections are deliberate successful ignores. Provider IDs accept only nonblank text or exact nonnegative integral JSON values; property values remain exact text, including empty strings.
+
+For each eligible connection, normalized events become module-owned immutable `LineItemChangeSignal` values. A versioned length-prefixed SHA-256 key covers immutable semantic fields, excluding delivery attempt and receipt time. PostgreSQL uniqueness is authoritative. Ingress performs no HubSpot read, requires no OAuth token, mutates no snapshot/audit state, and acknowledges only after each required connection group commits. A later group failure returns a retryable response; already committed groups safely deduplicate on redelivery.
+
 ## Two different extension operations
 
 ### Adding a Product Module
@@ -71,4 +81,4 @@ One operation does not imply the other. Follow the separate checklists in [Addin
 
 ## Decisions deferred
 
-Production key-management service/rotation, recurring HubSpot reads, webhook authentication/mapping, history-based audit reconstruction, access-token caching/coalescing, public disconnect UX, future providers, and provider-specific reconciliation limits remain deferred. HubSpot adapter code lives under `com.udmconsulting.integrations.hubspot` and depends inward on focused application/Platform Core boundaries.
+Production key-management service/rotation, recurring HubSpot reads, webhook signal processing, history-based audit reconstruction, access-token caching/coalescing, public disconnect UX, future providers, and provider-specific reconciliation limits remain deferred. The concrete public webhook target, deployable HubSpot webhook project component, project deployment, and genuine delivery acceptance are also deferred. HubSpot adapter code lives under `com.udmconsulting.integrations.hubspot` and depends inward on focused application/Platform Core boundaries.

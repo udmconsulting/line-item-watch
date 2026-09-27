@@ -25,6 +25,9 @@ hubspot:
     authorization-base-url: ${HUBSPOT_AUTHORIZATION_BASE_URL:https://app.hubspot.com/oauth/authorize}
     connect-timeout: ${HUBSPOT_CONNECT_TIMEOUT:5s}
     read-timeout: ${HUBSPOT_READ_TIMEOUT:20s}
+  webhook:
+    enabled: ${HUBSPOT_WEBHOOK_ENABLED:false}
+    public-uri: ${HUBSPOT_WEBHOOK_PUBLIC_URI:}
   credentials:
     key-id: ${HUBSPOT_CREDENTIAL_KEY_ID}
     encryption-key: ${HUBSPOT_CREDENTIAL_ENCRYPTION_KEY}

@@ -25,3 +25,5 @@ HubSpot Marketplace terms do **not** replace our own customer-facing provider te
 - Review legal/trust content whenever processing, providers, subprocessors, geography, retention, billing, onboarding, or security behavior changes.
 
 The HubSpot project still contains development placeholder support URLs/contact details. Replace them with approved real support, documentation, privacy, and security contact information before any external Beta distribution. The onboarding/terms-acceptance mechanism (including whether and how clickwrap is used), document versions, acceptance evidence, governing terms, launch details, and legal review owner are TBD.
+
+The implemented backend can retain exact HubSpot Line Item property values and Deal-association identifiers from authenticated webhook signals for future audit reconstruction. Retention periods, customer export/deletion wording, lawful-purpose documentation where applicable, and disconnect behavior must be reviewed before external processing. No permanent webhook hostname, deployment, or new hosting/monitoring subprocessor has been selected by P.4, so those disclosures remain TBD and must not be represented as live.

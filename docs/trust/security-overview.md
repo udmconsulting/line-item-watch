@@ -4,7 +4,7 @@ This is an engineering posture document, not marketing or a compliance claim.
 
 ## Current / proven
 
-- The backend persists application-generated Tenant/connection identity, provider account identity, connection lifecycle, Product Module entitlement, OAuth state metadata, encrypted HubSpot refresh credentials, and minimized `LINE_ITEM_WATCH` baseline/latest business state in PostgreSQL.
+- The backend persists application-generated Tenant/connection identity, provider account identity, connection lifecycle, Product Module entitlement, OAuth state metadata, encrypted HubSpot refresh credentials, minimized `LINE_ITEM_WATCH` baseline/latest business state, and normalized immutable Line Item change signals in PostgreSQL.
 - Refresh credentials use AES-256-GCM with random nonces and authenticated provider/connection context. The 256-bit key and key ID are external mandatory configuration; plaintext refresh credentials exist only transiently during provider operations.
 - OAuth state stores a SHA-256 digest rather than the browser value, expires after 10 minutes, is consumed atomically, and becomes eligible for bounded opportunistic deletion after a 24-hour replay-detection period.
 - Access tokens, authorization codes, OAuth client secrets, encryption keys, raw token responses, and decrypted credentials are not persisted. Access tokens are neither cached nor shared between operations.
@@ -15,6 +15,9 @@ This is an engineering posture document, not marketing or a compliance claim.
 - Tenant/connection constraints, encrypted persistence, lifecycle transitions, concurrent installation, optimistic credential races, baseline provider contracts, atomic snapshots, and negative isolation are covered by automated tests.
 - Module records carry Tenant and Platform Connection provenance enforced by composite PostgreSQL foreign keys. Baseline synchronization accepts internal Tenant/connection identity, requires an active HubSpot connection and Tenant-specific entitlement twice around provider I/O, and never infers ownership from a Deal or Line Item ID.
 - The baseline adapter validates selected provider values and persists neither full provider payloads nor OAuth material. It excludes the calculated billing-start type and any unverified currency property. Its completion log contains only internal Tenant/connection IDs and counts, not Deal/Line Item IDs or commercial values.
+- The conditional webhook endpoint requires a configured canonical HTTPS URI and validates HubSpot v3 HMAC-SHA256 over exact raw request bytes before JSON parsing. It enforces a five-minute timestamp window, strict digest encoding/length, constant-time comparison, body/batch/field limits, and fixed empty responses. Host and forwarding headers never define the signed URI.
+- Webhook routing resolves authenticated provider account identity through Platform Connection, never provisions Tenants, and persists only for active entitled connections. Short commit-guard transactions prevent a winning disconnect, reauthentication transition, or entitlement removal from racing a signal commit.
+- Raw webhook bodies/headers, signatures, secrets, tokens, attempt number, and complete events are neither persisted nor logged. The current OAuth client secret is reused transiently for verification. Rotation can reject in-flight requests signed with the prior secret because no dual-secret grace or secret history is implemented.
 - The feasibility probes require credentials through environment variables rather than committed literals.
 - The accepted spike demonstrated read/history and webhook feasibility; it did not establish production security controls.
 - Architectural boundaries are checked with ArchUnit, while broader Private Beta security and operational controls remain requirements rather than implemented claims.
@@ -33,7 +36,7 @@ OAuth access/refresh tokens and secrets must never be logged, committed, documen
 
 ### Transport and external input
 
-All public production endpoints require HTTPS/TLS. Webhook signature/authenticity validation is mandatory. Payloads and provider values are untrusted and must be validated before processing.
+All public production endpoints require HTTPS/TLS. The backend webhook authenticity and validation controls are implemented, but a permanent public target, HubSpot project webhook component/deployment, edge controls, and live acceptance remain deferred. Payloads and provider values are untrusted and must be validated before processing.
 
 ### Logging, monitoring, and incidents
 

@@ -2,7 +2,7 @@
 
 Line Item Watch is the first Product Module of a planned modular B2B SaaS. Its initial purpose is to give HubSpot users a useful audit history for Deal Line Item changes: what changed, old and new values, when, who where available, and creation/removal behavior.
 
-The repository contains the accepted HubSpot feasibility probes and a production backend foundation. The backend now provides internal Tenant and Platform Connection identity, module entitlements, HubSpot OAuth installation, encrypted refresh-credential lifecycle, on-demand token refresh, an internal uninstall capability, and the first `LINE_ITEM_WATCH` business slice: explicit one-Deal baseline synchronization with immutable baseline and replaceable latest snapshots. Webhooks, audit reconstruction, scheduled reconciliation, and Line Item Watch UI are not implemented yet.
+The repository contains the accepted HubSpot feasibility probes and a production backend foundation. The backend now provides internal Tenant and Platform Connection identity, module entitlements, HubSpot OAuth installation, encrypted refresh-credential lifecycle, on-demand token refresh, an internal uninstall capability, explicit one-Deal baseline synchronization, and authenticated HubSpot webhook ingestion into immutable module-owned Line Item change signals. Audit reconstruction, asynchronous signal processing, scheduled reconciliation, and the Line Item Watch UI are not implemented yet.
 
 ## Backend foundation
 
@@ -19,6 +19,8 @@ SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
 ```
 
 The tracked local profile contains only explicit non-production database credentials. Durable developer-machine secrets belong in the ignored `backend/config/application-local.yaml`; its tracked example contains placeholders only. Production secrets remain external runtime configuration through the existing environment variables. Begin a local install at `GET /integrations/hubspot/oauth/install`; see [Local development](docs/development/local-development.md).
+
+Webhook receipt is disabled by default. Enabling it requires `HUBSPOT_WEBHOOK_ENABLED=true` and an exact externally reachable canonical HTTPS `HUBSPOT_WEBHOOK_PUBLIC_URI` ending in `/integrations/hubspot/webhooks`. The backend receiver, authentication, normalization, routing, deduplication, and durable-before-ack capture are implemented. A concrete public target, deployable HubSpot webhook component, provider deployment, and live webhook acceptance are deliberately deferred.
 
 ## Project documentation
 
