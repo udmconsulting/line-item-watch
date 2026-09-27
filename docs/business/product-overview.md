@@ -24,7 +24,7 @@ The feasibility spike against HubSpot platform `2026.09` passed:
 - association creation and removal can be identified; and
 - a deleted Line Item could not be recovered through the tested current API, including an `archived=true` read.
 
-The accepted deletion approach is **MODEL B**: establish an initial baseline, retain the latest known item snapshot, and use that snapshot when a deletion signal arrives. See the [feasibility evidence](../../README.md#technical-feasibility-evidence).
+The accepted deletion approach is **MODEL B**: establish an immutable initial baseline, retain a replaceable complete observed checkpoint, and derive the latest known item state from checkpoints plus immutable signals. A deletion freezes that derived state. See the [feasibility evidence](../../README.md#technical-feasibility-evidence).
 
 ### Not yet commercially proven
 
@@ -32,4 +32,4 @@ Product-market fit, willingness to pay, pricing, onboarding conversion, customer
 
 ## Current status
 
-The Platform Core foundation and HubSpot OAuth installation/credential lifecycle are implemented. The target Private Beta architecture and remaining scope are documented; recurring provider reads, webhook processing, Line Item Watch audit behavior, and customer-facing Deal UI are not yet implemented.
+The Platform Core foundation, HubSpot OAuth lifecycle, baseline/checkpoint persistence, authenticated webhook capture, provider-free signal processing, semantic audit reconstruction, deletion freeze, and sparse latest projection are implemented. The worker remains disabled by default. Recurring reconciliation, customer-facing recovery/administration, production operations, and the Deal UI are not yet implemented.

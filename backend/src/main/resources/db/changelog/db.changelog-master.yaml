@@ -7,3 +7,5 @@ databaseChangeLog:
       file: db/changelog/changes/003-line-item-watch-baseline.sql
   - include:
       file: db/changelog/changes/004-line-item-watch-change-signals.sql
+  - include:
+      file: db/changelog/changes/005-line-item-watch-signal-processing.sql

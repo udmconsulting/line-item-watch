@@ -1,5 +1,7 @@
 # ADR 0005: Retain immutable baseline and replaceable latest Line Item snapshots
 
+> Historical P.3 decision. ADR 0007 supersedes direct LATEST ownership: the former replaceable latest provider observation is now `OBSERVED`, while `LATEST` is derived only by shared reconstruction.
+
 - Status: Accepted
 - Date: 2026-09-25
 

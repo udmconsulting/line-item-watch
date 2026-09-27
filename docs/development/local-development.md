@@ -2,7 +2,7 @@
 
 ## Repository status
 
-The repository contains HubSpot app project metadata, read-only feasibility probes, and one backend Maven module under `backend/`. The backend implements Platform Core identity/entitlements, HubSpot OAuth installation, encrypted refresh credentials, on-demand refresh, internal uninstall, the internal one-Deal `LINE_ITEM_WATCH` baseline use case, and a conditional authenticated webhook receiver. It exposes install/callback HTTP endpoints but no public baseline, business administration, or disconnect endpoint.
+The repository contains HubSpot app project metadata, read-only feasibility probes, and one backend Maven module under `backend/`. The backend implements Platform Core identity/entitlements, HubSpot OAuth installation, encrypted refresh credentials, on-demand refresh, internal uninstall, the internal one-Deal `LINE_ITEM_WATCH` observation use case, a conditional authenticated webhook receiver, and an opt-in provider-free signal worker. It exposes install/callback HTTP endpoints but no public baseline, business administration, recovery, or disconnect endpoint.
 
 ## Prerequisites
 
@@ -49,7 +49,17 @@ HUBSPOT_WEBHOOK_ENABLED=true
 HUBSPOT_WEBHOOK_PUBLIC_URI=https://<real-public-host>/integrations/hubspot/webhooks
 ```
 
-The URI must be the exact absolute HTTPS target registered with HubSpot and may not contain user info, query, fragment, or a percent-encoded path. Do not commit the real host, a temporary tunnel, or a fake/placeholder target. No deployable HubSpot webhook component exists until a permanent target is selected and separately authorized for project upload/deployment.
+The URI must be the exact absolute HTTPS target registered with HubSpot and may not contain user info, query, fragment, or a percent-encoded path. Do not commit the real host, a temporary tunnel, or a fake/placeholder target. Controlled P.4 genuine-delivery acceptance used separately authorized environment configuration; production deployment metadata remains outside this repository until a permanent target is selected.
+
+### Signal-processing configuration
+
+Processing is off by default and performs no HubSpot calls. Enable it only when the database should be consumed by this runtime:
+
+```text
+LINE_ITEM_WATCH_PROCESSING_ENABLED=true
+```
+
+Optional settings are `LINE_ITEM_WATCH_PROCESSING_POLL_DELAY` (`1s`), `LINE_ITEM_WATCH_PROCESSING_MAX_PER_POLL` (`50`), `LINE_ITEM_WATCH_PROCESSING_LEASE_DURATION` (`2m`), `LINE_ITEM_WATCH_PROCESSING_MAX_ATTEMPTS` (`8`), `LINE_ITEM_WATCH_PROCESSING_BASE_BACKOFF` (`5s`), and `LINE_ITEM_WATCH_PROCESSING_MAX_BACKOFF` (`15m`). A terminal failure blocks later signals only for its Line Item. There is no P.5 recovery API; inspect the sanitized durable status and use controlled operator database tooling only after correcting the cause.
 
 Run the complete backend verification suite with Docker available:
 
@@ -58,7 +68,7 @@ cd backend
 ./mvnw verify
 ```
 
-The suite starts PostgreSQL 18.6 through Testcontainers, applies Liquibase migrations, validates with Hibernate, exercises OAuth/credential concurrency, baseline/latest and change-signal persistence/isolation, deterministic webhook lifecycle races, signature/parser/MVC contracts, provider HTTP contracts, and ArchUnit rules. It does not call live HubSpot or use the Compose database. The guarded P.3 live harnesses are documented in [Testing](testing.md); do not run them without separate live-provider authorization. P.4 genuine delivery acceptance is deferred until a public target exists.
+The suite starts PostgreSQL 18.6 through Testcontainers, applies Liquibase migrations, validates with Hibernate, exercises OAuth/credential concurrency, checkpoint/signal/audit persistence and isolation, deterministic reconstruction and worker concurrency, webhook lifecycle races, signature/parser/MVC contracts, provider HTTP contracts, and ArchUnit rules. It does not call live HubSpot or use the Compose database. Guarded live P.3 harnesses and the provider-free retained P.4 evidence harness are documented in [Testing](testing.md). Controlled P.4 genuine-delivery acceptance is complete.
 
 ## Verified commands
 

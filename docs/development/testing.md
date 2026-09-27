@@ -12,9 +12,23 @@ The suite verifies Liquibase/Hibernate startup, foundation and module isolation/
 
 P.4 tests use only a synthetic HTTPS target, client secret, clock, IDs, and payloads. They cover strict canonical URI configuration; exact raw-body v3 signatures and timestamp bounds; JSON/media/encoding/body/batch bounds; all ten monitored properties including empty clearing; creation, deletion, association directions/actions, exact integral provider IDs, ignored semantics, out-of-order occurrence times, routing/grouping, fixed empty HTTP outcomes, and database retry surfacing. PostgreSQL 18.6 tests cover migration constraints, exact property retention before deletion, immutable insert/deduplication, same dedup key across connections, cross-Tenant rejection, atomic group rollback, concurrent duplicate capture, cascades, and deterministic disconnect/reauthentication/entitlement races.
 
+P.5 unit tests cover baseline-first and signal-first reconstruction, explicit `UNKNOWN`, out-of-order replay, sparse known properties, same-timestamp lifecycle precedence, ambiguous equal-time property values, association transition collapse, opposite transitions, and deletion freeze. PostgreSQL 18.6 tests cover migration/constraints, the single shared P.3/P.5 LATEST writer, late-signal repair, audit/source/Deal-context projection, raw-evidence deletion without audit loss, `SKIP LOCKED` claims, per-Line-Item serialization, stale leases, bounded/terminal failure isolation, and transaction rollback/reclaim. ArchUnit continues to prove that module processing cannot depend on the HubSpot integration.
+
 The provider regression fixture deliberately omits `hub_id` and `scopes` from token issuance and supplies them only through introspection. PostgreSQL race tests cover ordinary generation advancement plus invalid-grant, replacement, stale introspection, scope-loss, uninstall responses after credential replacement or deletion/reinstall, concurrent first baseline writes, and commit-guard rejection after a winning disconnect, reauthentication transition, or entitlement removal. Commit-guard tests hold the winning mutation uncommitted, identify its PostgreSQL backend PID, and require PostgreSQL to report the persistence backend as lock-blocked by that PID before permitting the mutation to commit.
 
-Live HubSpot acceptance is intentionally opt-in and is not part of Maven verification. It requires an approved isolated account, environment-supplied secrets, matching callback configuration, and an explicit cleanup plan. P.4 webhook live acceptance has no harness or project component yet and is **deferred—public HTTPS target required**; selecting a target, adding/validating matching metadata, deployment, and genuine delivery testing are separate authorized work.
+Live HubSpot acceptance is intentionally opt-in and is not part of Maven verification. It requires an approved isolated account, environment-supplied secrets, matching callback configuration, and an explicit cleanup plan. Controlled P.4 genuine webhook delivery acceptance and cleanup were completed. Its retained local PostgreSQL evidence is deliberately not fabricated or redelivered for P.5.
+
+### Retained P.4 signal-processing acceptance
+
+`P5RetainedEvidenceAcceptanceIT` is an opt-in, provider-free harness for the already retained local P.4 database evidence. Maven Surefire does not select its `*IT` name during normal `./mvnw verify`. It fails before mutation unless `P5_RETAINED_EVIDENCE_CONFIRM=true` is present, runs transactionally, and never resolves or invokes any HubSpot provider client.
+
+```shell
+SPRING_PROFILES_ACTIVE=local \
+P5_RETAINED_EVIDENCE_CONFIRM=true \
+./mvnw -Dtest=P5RetainedEvidenceAcceptanceIT test
+```
+
+The retained sequence is signal-first and intentionally has no matching P.3 BASELINE. The harness verifies `CREATED`, the first property's `UNKNOWN` predecessor, directional association evidence collapsing to one logical transition, `REMOVED` cleanup retained as evidence without erasing frozen Deal context, auditable `DELETED`, sparse LATEST state, and identical semantic keys/counts after replay. It prints counts only and does not contact HubSpot.
 
 ### Live one-Deal baseline acceptance
 
@@ -28,7 +42,7 @@ HUBSPOT_LIVE_BASELINE_CONFIRM=149377304:521984899298 \
 ./mvnw -Dtest=HubSpotLiveBaselineAcceptanceIT test
 ```
 
-The harness resolves the installed account through Platform Core, confirms the active connection and entitlement, reads Deal `521984899298` through production OAuth/provider wiring, confirms feasibility Line Item `486464823492`, invokes baseline synchronization twice, and verifies normalized latest values, baseline/latest rows, complete known Deal associations, Tenant/connection provenance, rerun uniqueness, and the absence of token/secret/raw-JSON persistence columns. It prints only counts and pass indicators, never credentials or commercial values. It still refreshes credentials on demand and reads live provider/customer data, so it must not be run casually or against production customer installations.
+The harness resolves the installed account through Platform Core, confirms the active connection and entitlement, reads Deal `521984899298` through production OAuth/provider wiring, confirms feasibility Line Item `486464823492`, invokes observation synchronization twice, and verifies normalized BASELINE/OBSERVED/derived-LATEST rows, complete known Deal associations, Tenant/connection provenance, rerun uniqueness, and the absence of token/secret/raw-JSON persistence columns. It prints only counts and pass indicators, never credentials or commercial values. It still refreshes credentials on demand and reads live provider/customer data, so it must not be run casually or against production customer installations.
 
 ### Live on-demand refresh acceptance
 
@@ -64,7 +78,7 @@ As applicable to a change, verify:
 
 - installation, connection identity, and entitlement gates;
 - initial baseline and latest-snapshot maintenance;
-- deterministic audit reconstruction from authoritative provider state;
+- deterministic audit reconstruction from complete checkpoints and immutable evidence;
 - creation, association, disassociation, and MODEL B deletion handling;
 - duplicate, delayed, missing, and out-of-order event behavior;
 - idempotent retry, retry exhaustion, terminal failure, and recovery;

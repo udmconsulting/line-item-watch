@@ -142,8 +142,8 @@ class LineItemSnapshotPersistenceIntegrationTest {
         assertThat(first.createdLatestSnapshots()).isEqualTo(1);
         assertThat(repeated.unchangedLatestSnapshots()).isEqualTo(1);
         assertThat(count("line_item_watch_line_item")).isEqualTo(1);
-        assertThat(count("line_item_watch_snapshot")).isEqualTo(2);
-        assertThat(count("line_item_watch_snapshot_deal")).isEqualTo(4);
+        assertThat(count("line_item_watch_snapshot")).isEqualTo(3);
+        assertThat(count("line_item_watch_snapshot_deal")).isEqualTo(6);
 
         LineItemObservation newer = observation(
                 "Updated name",
@@ -155,6 +155,7 @@ class LineItemSnapshotPersistenceIntegrationTest {
 
         assertThat(update.updatedLatestSnapshots()).isEqualTo(1);
         assertThat(snapshotName("BASELINE")).isEqualTo("Initial name");
+        assertThat(snapshotName("OBSERVED")).isEqualTo("Updated name");
         assertThat(snapshotName("LATEST")).isEqualTo("Updated name");
         assertThat(dealIds("BASELINE")).containsExactlyInAnyOrder("deal-1", "deal-2");
         assertThat(dealIds("LATEST")).containsExactlyInAnyOrder("deal-2", "deal-3");
@@ -211,6 +212,7 @@ class LineItemSnapshotPersistenceIntegrationTest {
         assertThat(result.updatedLatestSnapshots()).isEqualTo(1);
         assertThat(staleResult.unchangedLatestSnapshots()).isEqualTo(1);
         assertThat(snapshotName("BASELINE")).isEqualTo("First observation");
+        assertThat(snapshotName("OBSERVED")).isEqualTo("Later observation");
         assertThat(snapshotName("LATEST")).isEqualTo("Later observation");
         assertThat(dealIds("LATEST")).containsExactly("deal-2");
     }
@@ -365,7 +367,7 @@ class LineItemSnapshotPersistenceIntegrationTest {
         }
 
         assertThat(count("line_item_watch_line_item")).isEqualTo(1);
-        assertThat(count("line_item_watch_snapshot")).isEqualTo(2);
+        assertThat(count("line_item_watch_snapshot")).isEqualTo(3);
         assertThat(snapshotName("LATEST")).isEqualTo("Newer");
         assertThat(dealIds("LATEST")).containsExactlyInAnyOrder("deal-1", "deal-2");
     }

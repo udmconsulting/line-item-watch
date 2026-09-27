@@ -101,11 +101,16 @@ class HubSpotLiveBaselineAcceptanceIT {
                     WHERE identity.tenant_id = ? AND identity.connection_id = ?
                       AND identity.external_line_item_id = ?
                     """, connection.tenantId().value(), connection.id().value(), item.lineItemId().value()))
-                    .isEqualTo(2L);
+                    .isEqualTo(3L);
         }
 
         PersistedSnapshot latest = loadSnapshot(connection, expectedLineItem.lineItemId(), "LATEST");
+        PersistedSnapshot observed = loadSnapshot(connection, expectedLineItem.lineItemId(), "OBSERVED");
         assertThat(latest)
+                .usingRecursiveComparison()
+                .withComparatorForType(BigDecimal::compareTo, BigDecimal.class)
+                .isEqualTo(PersistedSnapshot.from(expectedLineItem));
+        assertThat(observed)
                 .usingRecursiveComparison()
                 .withComparatorForType(BigDecimal::compareTo, BigDecimal.class)
                 .isEqualTo(PersistedSnapshot.from(expectedLineItem));
@@ -130,6 +135,7 @@ class HubSpotLiveBaselineAcceptanceIT {
         System.out.println("LIVE_BASELINE_ACCEPTANCE_PASS");
         System.out.println("observed line items: " + first.observedLineItems());
         System.out.println("baseline rows: " + expected.lineItems().size());
+        System.out.println("observed checkpoint rows: " + expected.lineItems().size());
         System.out.println("latest rows: " + expected.lineItems().size());
         System.out.println("rerun created records: 0");
         System.out.println("tenant and connection provenance: verified");

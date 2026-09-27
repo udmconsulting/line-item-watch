@@ -25,4 +25,4 @@ Logical roles permit independent scaling or failure isolation later without requ
 
 ## Deferred decisions
 
-Docker Compose supplies PostgreSQL 18.6 for local development only. The current external key configuration is suitable for controlled development/acceptance, not a production key-management decision. Hosting provider, managed database provider, region, network topology, job mechanism, managed secret/key service and rotation, observability vendors, backup retention, RPO, RTO, capacity, and deployment pipeline are TBD.
+Docker Compose supplies PostgreSQL 18.6 for local development only. The current external key configuration is suitable for controlled development/acceptance, not a production key-management decision. P.5 uses PostgreSQL processing rows plus an opt-in in-process scheduled poller; no external queue is required. Hosting provider, managed database provider, region, network topology, production worker role/topology, managed secret/key service and rotation, observability vendors, backup retention, RPO, RTO, capacity, and deployment pipeline are TBD.
