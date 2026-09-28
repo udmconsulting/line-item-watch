@@ -11,6 +11,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.udmconsulting.integrations.hubspot.config.HubSpotOAuthProperties;
 import com.udmconsulting.modules.lineitemwatch.application.BaselineSyncException;
+import com.udmconsulting.modules.lineitemwatch.application.BaselineSyncFailure;
 import com.udmconsulting.modules.lineitemwatch.domain.BillingStart;
 import com.udmconsulting.modules.lineitemwatch.domain.ProviderObjectId;
 import com.udmconsulting.platform.connection.domain.ConnectionStatus;
@@ -168,6 +169,84 @@ class RestHubSpotLineItemBaselineSourceTest {
         server.verify();
     }
 
+    @Test
+    void rejectsUnexpectedDealIdentity() {
+        expectGet("/crm/objects/2026-09/deals/1", """
+                {"id":"2","archived":false}
+                """);
+
+        assertThatThrownBy(() -> source.readDeal(connection, new ProviderObjectId("1")))
+                .isInstanceOfSatisfying(BaselineSyncException.class,
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(
+                                        BaselineSyncFailure.PROVIDER_DEAL_IDENTITY_MISMATCH));
+    }
+
+    @Test
+    void rejectsUnexpectedLineItemIdentity() {
+        expectGet("/crm/objects/2026-09/deals/1", """
+                {"id":"1","archived":false}
+                """);
+        expectAssociationPage(
+                "/crm/associations/2026-09/deals/line_items/batch/read", "1", "2");
+        String properties = String.join(",", RestHubSpotLineItemBaselineSource.REQUESTED_PROPERTIES);
+        expectGet("/crm/objects/2026-09/line_items/2?properties=" + properties, """
+                {"id":"3","createdAt":"2026-09-01T09:00:00Z",
+                 "updatedAt":"2026-09-20T11:30:00Z","archived":false,"properties":{}}
+                """);
+
+        assertThatThrownBy(() -> source.readDeal(connection, new ProviderObjectId("1")))
+                .isInstanceOfSatisfying(BaselineSyncException.class,
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(
+                                        BaselineSyncFailure.PROVIDER_LINE_ITEM_IDENTITY_MISMATCH));
+    }
+
+    @Test
+    void archivedAssociatedLineItemMeansProviderStateChanged() {
+        expectGet("/crm/objects/2026-09/deals/1", """
+                {"id":"1","archived":false}
+                """);
+        expectAssociationPage(
+                "/crm/associations/2026-09/deals/line_items/batch/read", "1", "2");
+        String properties = String.join(",", RestHubSpotLineItemBaselineSource.REQUESTED_PROPERTIES);
+        expectGet("/crm/objects/2026-09/line_items/2?properties=" + properties, """
+                {"id":"2","createdAt":"2026-09-01T09:00:00Z",
+                 "updatedAt":"2026-09-20T11:30:00Z","archived":true,"properties":{}}
+                """);
+
+        assertThatThrownBy(() -> source.readDeal(connection, new ProviderObjectId("1")))
+                .isInstanceOfSatisfying(BaselineSyncException.class,
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(BaselineSyncFailure.PROVIDER_STATE_CHANGED));
+    }
+
+    @Test
+    void disappearingTargetAssociationMeansProviderStateChanged() {
+        expectGet("/crm/objects/2026-09/deals/1", """
+                {"id":"1","archived":false}
+                """);
+        expectAssociationPage(
+                "/crm/associations/2026-09/deals/line_items/batch/read", "1", "2");
+        expectLineItem("2", "{}", "2026-09-20T11:30:00Z");
+        expectAssociationPage(
+                "/crm/associations/2026-09/line_items/deals/batch/read", "2", "3");
+
+        assertThatThrownBy(() -> source.readDeal(connection, new ProviderObjectId("1")))
+                .isInstanceOfSatisfying(BaselineSyncException.class,
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(BaselineSyncFailure.PROVIDER_STATE_CHANGED));
+    }
+
+    @Test
+    void rejectsProviderIncompatibleRequestedObjectId() {
+        assertThatThrownBy(() -> source.readDeal(
+                        connection, new ProviderObjectId("not-a-hubspot-id")))
+                .isInstanceOfSatisfying(BaselineSyncException.class,
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(BaselineSyncFailure.PROVIDER_OBJECT_ID_INVALID));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"2.0", "2.5", "null", "true", "{}", "[]", "\" \""})
     void rejectsNonIntegralOrArbitraryDealAssociationTargetIds(String invalidWireId) {
@@ -180,7 +259,8 @@ class RestHubSpotLineItemBaselineSourceTest {
                 "\"1\"",
                 invalidWireId);
 
-        assertSanitizedAssociationFailure(false, invalidWireId);
+        assertSanitizedAssociationFailure(
+                BaselineSyncFailure.PROVIDER_RESPONSE_INVALID, invalidWireId);
     }
 
     @ParameterizedTest
@@ -198,7 +278,8 @@ class RestHubSpotLineItemBaselineSourceTest {
                 "\"2\"",
                 invalidWireId);
 
-        assertSanitizedAssociationFailure(false, invalidWireId);
+        assertSanitizedAssociationFailure(
+                BaselineSyncFailure.PROVIDER_RESPONSE_INVALID, invalidWireId);
     }
 
     @Test
@@ -219,7 +300,9 @@ class RestHubSpotLineItemBaselineSourceTest {
                                   "errors":[{"message":"sensitive-provider-detail"}]}
                                 """));
 
-        assertSanitizedAssociationFailure(true, "sensitive-provider-detail");
+        assertSanitizedAssociationFailure(
+                BaselineSyncFailure.PROVIDER_ASSOCIATION_READ_INCOMPLETE,
+                "sensitive-provider-detail");
     }
 
     @Test
@@ -232,7 +315,9 @@ class RestHubSpotLineItemBaselineSourceTest {
                  "errors":[{"message":"sensitive-provider-detail"}]}
                 """);
 
-        assertSanitizedAssociationFailure(true, "sensitive-provider-detail");
+        assertSanitizedAssociationFailure(
+                BaselineSyncFailure.PROVIDER_ASSOCIATION_READ_INCOMPLETE,
+                "sensitive-provider-detail");
     }
 
     @Test
@@ -244,7 +329,8 @@ class RestHubSpotLineItemBaselineSourceTest {
                 {"status":"COMPLETE","results":[],"numErrors":1,"errors":[]}
                 """);
 
-        assertSanitizedAssociationFailure(true, "numErrors");
+        assertSanitizedAssociationFailure(
+                BaselineSyncFailure.PROVIDER_ASSOCIATION_READ_INCOMPLETE, "numErrors");
     }
 
     @Test
@@ -256,7 +342,8 @@ class RestHubSpotLineItemBaselineSourceTest {
                 {"status":"PROCESSING","results":[],"numErrors":0,"errors":[]}
                 """);
 
-        assertSanitizedAssociationFailure(true, "PROCESSING");
+        assertSanitizedAssociationFailure(
+                BaselineSyncFailure.PROVIDER_ASSOCIATION_READ_INCOMPLETE, "PROCESSING");
     }
 
     @Test
@@ -268,7 +355,8 @@ class RestHubSpotLineItemBaselineSourceTest {
                 {"status":"COMPLETE","results":[],"numErrors":"zero","errors":{}}
                 """);
 
-        assertSanitizedAssociationFailure(false, "zero");
+        assertSanitizedAssociationFailure(
+                BaselineSyncFailure.PROVIDER_RESPONSE_INVALID, "zero");
     }
 
     @Test
@@ -280,7 +368,8 @@ class RestHubSpotLineItemBaselineSourceTest {
                 {"status":7,"results":[],"numErrors":0,"errors":[]}
                 """);
 
-        assertSanitizedAssociationFailure(false, "status");
+        assertSanitizedAssociationFailure(
+                BaselineSyncFailure.PROVIDER_RESPONSE_INVALID, "status");
     }
 
     @ParameterizedTest
@@ -291,7 +380,8 @@ class RestHubSpotLineItemBaselineSourceTest {
 
         assertThatThrownBy(() -> source.readDeal(connection, new ProviderObjectId("1")))
                 .isInstanceOfSatisfying(BaselineSyncException.class, exception -> {
-                    assertThat(exception.retryable()).isTrue();
+                    assertThat(exception.failure())
+                            .isEqualTo(BaselineSyncFailure.PROVIDER_UNAVAILABLE);
                     assertThat(exception).hasMessageNotContaining(ACCESS_TOKEN);
                 });
     }
@@ -315,7 +405,8 @@ class RestHubSpotLineItemBaselineSourceTest {
 
         assertThatThrownBy(() -> source.readDeal(connection, new ProviderObjectId("1")))
                 .isInstanceOfSatisfying(BaselineSyncException.class,
-                        exception -> assertThat(exception.retryable()).isFalse());
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(BaselineSyncFailure.PROVIDER_RESPONSE_INVALID));
     }
 
     @Test
@@ -351,7 +442,8 @@ class RestHubSpotLineItemBaselineSourceTest {
 
         assertThatThrownBy(() -> source.readDeal(connection, new ProviderObjectId("1")))
                 .isInstanceOfSatisfying(BaselineSyncException.class, exception -> {
-                    assertThat(exception.retryable()).isFalse();
+                    assertThat(exception.failure())
+                            .isEqualTo(BaselineSyncFailure.PROVIDER_AUTHORIZATION_REJECTED);
                     assertThat(exception).hasMessageNotContaining(ACCESS_TOKEN);
                 });
     }
@@ -363,7 +455,8 @@ class RestHubSpotLineItemBaselineSourceTest {
 
         assertThatThrownBy(() -> source.readDeal(connection, new ProviderObjectId("1")))
                 .isInstanceOfSatisfying(BaselineSyncException.class,
-                        exception -> assertThat(exception.retryable()).isFalse());
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(BaselineSyncFailure.PROVIDER_DEAL_NOT_FOUND));
     }
 
     @Test
@@ -380,7 +473,8 @@ class RestHubSpotLineItemBaselineSourceTest {
 
         assertThatThrownBy(() -> source.readDeal(connection, new ProviderObjectId("1")))
                 .isInstanceOfSatisfying(BaselineSyncException.class,
-                        exception -> assertThat(exception.retryable()).isTrue());
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(BaselineSyncFailure.PROVIDER_STATE_CHANGED));
     }
 
     @Test
@@ -424,7 +518,8 @@ class RestHubSpotLineItemBaselineSourceTest {
 
         assertThatThrownBy(() -> source.readDeal(connection, new ProviderObjectId("1")))
                 .isInstanceOfSatisfying(BaselineSyncException.class,
-                        exception -> assertThat(exception.retryable()).isFalse());
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(BaselineSyncFailure.PROVIDER_RESPONSE_INVALID));
     }
 
     @Test
@@ -436,7 +531,8 @@ class RestHubSpotLineItemBaselineSourceTest {
 
         assertThatThrownBy(() -> source.readDeal(connection, new ProviderObjectId("1")))
                 .isInstanceOfSatisfying(BaselineSyncException.class, exception -> {
-                    assertThat(exception.retryable()).isTrue();
+                    assertThat(exception.failure())
+                            .isEqualTo(BaselineSyncFailure.PROVIDER_UNAVAILABLE);
                     assertThat(exception).hasMessageNotContaining(ACCESS_TOKEN);
                 });
     }
@@ -483,7 +579,8 @@ class RestHubSpotLineItemBaselineSourceTest {
 
         assertThatThrownBy(() -> source.readDeal(connection, new ProviderObjectId("1")))
                 .isInstanceOfSatisfying(BaselineSyncException.class, exception -> {
-                    assertThat(exception.retryable()).isFalse();
+                    assertThat(exception.failure())
+                            .isEqualTo(BaselineSyncFailure.PROVIDER_RESPONSE_INVALID);
                     assertThat(exception)
                             .hasMessageNotContaining(ACCESS_TOKEN)
                             .hasMessageNotContaining(sensitiveValue);
@@ -492,10 +589,10 @@ class RestHubSpotLineItemBaselineSourceTest {
     }
 
     private void assertSanitizedAssociationFailure(
-            boolean retryable, String sensitiveValue) {
+            BaselineSyncFailure expectedFailure, String sensitiveValue) {
         assertThatThrownBy(() -> source.readDeal(connection, new ProviderObjectId("1")))
                 .isInstanceOfSatisfying(BaselineSyncException.class, exception -> {
-                    assertThat(exception.retryable()).isEqualTo(retryable);
+                    assertThat(exception.failure()).isEqualTo(expectedFailure);
                     assertThat(exception)
                             .hasMessageNotContaining(ACCESS_TOKEN)
                             .hasMessageNotContaining(sensitiveValue);

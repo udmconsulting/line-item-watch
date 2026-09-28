@@ -1,29 +1,18 @@
 package com.udmconsulting.modules.lineitemwatch.application;
 
 import com.udmconsulting.platform.supportability.OperationalErrorCode;
+import java.util.Objects;
 
 public final class SignalProcessingException extends RuntimeException {
 
-    private final String errorCode;
-    private final boolean retryable;
+    private final OperationalErrorCode errorCode;
 
-    public SignalProcessingException(String errorCode, boolean retryable, Throwable cause) {
+    public SignalProcessingException(OperationalErrorCode errorCode, Throwable cause) {
         super("Line Item signal processing failed", cause);
-        try {
-            OperationalErrorCode.valueOf(errorCode);
-        } catch (NullPointerException | IllegalArgumentException exception) {
-            throw new IllegalArgumentException(
-                    "errorCode must be a bounded application-owned category", exception);
-        }
-        this.errorCode = errorCode;
-        this.retryable = retryable;
+        this.errorCode = Objects.requireNonNull(errorCode);
     }
 
-    public String errorCode() {
+    public OperationalErrorCode errorCode() {
         return errorCode;
-    }
-
-    public boolean retryable() {
-        return retryable;
     }
 }

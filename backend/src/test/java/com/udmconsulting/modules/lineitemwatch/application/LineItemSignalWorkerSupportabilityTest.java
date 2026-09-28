@@ -9,6 +9,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.udmconsulting.platform.connection.domain.PlatformConnectionId;
 import com.udmconsulting.platform.supportability.ApplicationOperationMetrics;
 import com.udmconsulting.platform.supportability.DiagnosticContext;
+import com.udmconsulting.platform.supportability.OperationalErrorCode;
 import com.udmconsulting.platform.tenant.domain.TenantId;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
@@ -21,14 +22,42 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.CannotAcquireLockException;
 
 class LineItemSignalWorkerSupportabilityTest {
 
     @Test
-    void processingErrorsCannotIntroduceUnboundedCodes() {
-        assertThatThrownBy(() -> new SignalProcessingException(
-                "PROVIDER_SUPPLIED_" + UUID.randomUUID(), true, null))
-                .isInstanceOf(IllegalArgumentException.class);
+    void processingErrorsCarryTheBoundedOperationalTypeDirectly() {
+        SignalProcessingException exception = new SignalProcessingException(
+                OperationalErrorCode.INVALID_SIGNAL_VALUE, null);
+
+        assertThat(exception.errorCode()).isEqualTo(OperationalErrorCode.INVALID_SIGNAL_VALUE);
+        assertThatThrownBy(() -> new SignalProcessingException(null, null))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void deterministicProcessingFailureIsNonRetryable() {
+        assertFailureClassification(
+                new SignalProcessingException(OperationalErrorCode.INVALID_SIGNAL_VALUE, null),
+                OperationalErrorCode.INVALID_SIGNAL_VALUE,
+                false);
+    }
+
+    @Test
+    void transientDatabaseFailureIsRetryable() {
+        assertFailureClassification(
+                new CannotAcquireLockException("unsafe database detail"),
+                OperationalErrorCode.TRANSIENT_DATABASE,
+                true);
+    }
+
+    @Test
+    void unexpectedProcessingFailureIsRetryable() {
+        assertFailureClassification(
+                new IllegalStateException("unsafe internal detail"),
+                OperationalErrorCode.INTERNAL_PROCESSING,
+                true);
     }
 
     @Test
@@ -81,8 +110,34 @@ class LineItemSignalWorkerSupportabilityTest {
                 UUID.randomUUID(), attempt, now.minusSeconds(30), false);
     }
 
+    private static void assertFailureClassification(
+            RuntimeException failure,
+            OperationalErrorCode expectedCode,
+            boolean expectedRetryable) {
+        Instant now = Instant.parse("2026-09-28T10:00:00Z");
+        StubStore store = new StubStore(claim(now, 1));
+        store.failure = failure;
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        LineItemSignalWorker worker = new LineItemSignalWorker(
+                store,
+                new LineItemProcessingProperties(
+                        true, Duration.ofSeconds(1), 1, Duration.ofMinutes(2), 8,
+                        Duration.ofSeconds(5), Duration.ofMinutes(15)),
+                new LineItemProcessingMetrics(registry),
+                new ApplicationOperationMetrics(registry),
+                Clock.fixed(now, ZoneOffset.UTC));
+
+        worker.poll();
+
+        assertThat(store.recordedErrorCode).isEqualTo(expectedCode);
+        assertThat(store.recordedRetryable).isEqualTo(expectedRetryable);
+    }
+
     private static final class StubStore implements LineItemSignalProcessingStore {
         private final ArrayDeque<ClaimedLineItemSignal> claims;
+        private RuntimeException failure;
+        private OperationalErrorCode recordedErrorCode;
+        private Boolean recordedRetryable;
 
         private StubStore(ClaimedLineItemSignal... claims) {
             this.claims = new ArrayDeque<>(List.of(claims));
@@ -96,18 +151,23 @@ class LineItemSignalWorkerSupportabilityTest {
 
         @Override
         public ProcessingResult process(ClaimedLineItemSignal claim, Instant processedAt) {
+            if (failure != null) {
+                throw failure;
+            }
             return new ProcessingResult(1, false, false);
         }
 
         @Override
         public FailureResult recordFailure(
                 ClaimedLineItemSignal claim,
-                String errorCode,
+                OperationalErrorCode errorCode,
                 boolean retryable,
                 Instant failedAt,
                 Duration retryDelay,
                 int maxAttempts) {
-            throw new AssertionError("unexpected failure");
+            recordedErrorCode = errorCode;
+            recordedRetryable = retryable;
+            return new FailureResult(true, !retryable);
         }
 
         @Override

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.udmconsulting.modules.lineitemwatch.application.BaselineSyncException;
+import com.udmconsulting.modules.lineitemwatch.application.BaselineSyncFailure;
 import com.udmconsulting.modules.lineitemwatch.application.LineItemSnapshotStore;
 import com.udmconsulting.modules.lineitemwatch.domain.BillingStart;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemObservation;
@@ -376,16 +377,17 @@ class LineItemSnapshotPersistenceIntegrationTest {
     void disconnectWinningAtCommitGuardPreventsAllSnapshotPersistence() throws Exception {
         Fixture fixture = fixture("account-disconnect-race");
 
-        assertConcurrentCommitGuardRejects(fixture, (connection, ignored) -> {
-            try (PreparedStatement statement = connection.prepareStatement("""
-                    UPDATE platform_connection
-                    SET status = 'DISCONNECTED', status_changed_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """)) {
-                statement.setObject(1, fixture.connection().id().value());
-                assertThat(statement.executeUpdate()).isEqualTo(1);
-            }
-        });
+        assertConcurrentCommitGuardRejects(
+                fixture, BaselineSyncFailure.CONNECTION_NOT_ACTIVE, (connection, ignored) -> {
+                    try (PreparedStatement statement = connection.prepareStatement("""
+                            UPDATE platform_connection
+                            SET status = 'DISCONNECTED', status_changed_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                            """)) {
+                        statement.setObject(1, fixture.connection().id().value());
+                        assertThat(statement.executeUpdate()).isEqualTo(1);
+                    }
+                });
 
         assertThat(connectionService.findForTenant(
                 fixture.tenant().id(), fixture.connection().id()).orElseThrow().status())
@@ -396,16 +398,17 @@ class LineItemSnapshotPersistenceIntegrationTest {
     void reauthenticationWinningAtCommitGuardPreventsAllSnapshotPersistence() throws Exception {
         Fixture fixture = fixture("account-reauth-race");
 
-        assertConcurrentCommitGuardRejects(fixture, (connection, ignored) -> {
-            try (PreparedStatement statement = connection.prepareStatement("""
-                    UPDATE platform_connection
-                    SET status = 'REAUTH_REQUIRED', status_changed_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """)) {
-                statement.setObject(1, fixture.connection().id().value());
-                assertThat(statement.executeUpdate()).isEqualTo(1);
-            }
-        });
+        assertConcurrentCommitGuardRejects(
+                fixture, BaselineSyncFailure.CONNECTION_NOT_ACTIVE, (connection, ignored) -> {
+                    try (PreparedStatement statement = connection.prepareStatement("""
+                            UPDATE platform_connection
+                            SET status = 'REAUTH_REQUIRED', status_changed_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                            """)) {
+                        statement.setObject(1, fixture.connection().id().value());
+                        assertThat(statement.executeUpdate()).isEqualTo(1);
+                    }
+                });
 
         assertThat(connectionService.findForTenant(
                 fixture.tenant().id(), fixture.connection().id()).orElseThrow().status())
@@ -416,15 +419,16 @@ class LineItemSnapshotPersistenceIntegrationTest {
     void entitlementRemovalWinningAtCommitGuardPreventsAllSnapshotPersistence() throws Exception {
         Fixture fixture = fixture("account-entitlement-race");
 
-        assertConcurrentCommitGuardRejects(fixture, (connection, ignored) -> {
-            try (PreparedStatement statement = connection.prepareStatement("""
-                    DELETE FROM tenant_entitlement
-                    WHERE tenant_id = ? AND product_module = 'LINE_ITEM_WATCH'
-                    """)) {
-                statement.setObject(1, fixture.tenant().id().value());
-                assertThat(statement.executeUpdate()).isEqualTo(1);
-            }
-        });
+        assertConcurrentCommitGuardRejects(
+                fixture, BaselineSyncFailure.MODULE_NOT_ENTITLED, (connection, ignored) -> {
+                    try (PreparedStatement statement = connection.prepareStatement("""
+                            DELETE FROM tenant_entitlement
+                            WHERE tenant_id = ? AND product_module = 'LINE_ITEM_WATCH'
+                            """)) {
+                        statement.setObject(1, fixture.tenant().id().value());
+                        assertThat(statement.executeUpdate()).isEqualTo(1);
+                    }
+                });
 
         assertThat(entitlementService.isEnabled(
                 fixture.tenant().id(), ProductModule.LINE_ITEM_WATCH)).isFalse();
@@ -447,7 +451,9 @@ class LineItemSnapshotPersistenceIntegrationTest {
     }
 
     private void assertConcurrentCommitGuardRejects(
-            Fixture fixture, SqlMutation concurrentMutation) throws Exception {
+            Fixture fixture,
+            BaselineSyncFailure expectedFailure,
+            SqlMutation concurrentMutation) throws Exception {
         CompletableFuture<Integer> mutationBackendPid = new CompletableFuture<>();
         CountDownLatch allowMutationCommit = new CountDownLatch(1);
         LineItemObservation observation = observation(
@@ -479,7 +485,10 @@ class LineItemSnapshotPersistenceIntegrationTest {
             assertThatThrownBy(() -> persistenceResult.get(
                     LOCK_WAIT_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS))
                     .isInstanceOf(ExecutionException.class)
-                    .hasCauseInstanceOf(BaselineSyncException.class);
+                    .cause()
+                    .isInstanceOfSatisfying(BaselineSyncException.class,
+                            exception -> assertThat(exception.failure())
+                                    .isEqualTo(expectedFailure));
         } finally {
             allowMutationCommit.countDown();
             cancelIfRunning(persistence);

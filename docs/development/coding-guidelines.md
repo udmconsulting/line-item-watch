@@ -37,6 +37,10 @@ Mandatory configuration should fail fast where appropriate. Secrets and OAuth to
 
 Do not silently swallow failures. Public error codes are localization-neutral identifiers, never localized text or raw technical/provider detail. Keep the closed public registry separate from bounded internal operational categories and protocol-specific response shapes.
 
+Use a typed domain/application failure when callers, retry policy, logs, metrics, or tests need stable semantic identity independent of diagnostic wording. Keep one-off programmer, configuration, and local invariant messages as diagnostics rather than creating ceremonial enums. Retryability belongs to the typed failure when it is intrinsic; keep it at the handling boundary when it genuinely depends on runtime context such as attempt count or exception class. Never branch on exception message text.
+
+Domain/application failure codes, `OperationalErrorCode`, `PublicErrorCode`, and UI localization keys are separate concepts. Map between them explicitly only at a boundary that needs the mapping. An internal failure does not automatically become a public response code, localization key, log field, or metric tag, and diagnostic English text is not a semantic identifier.
+
 Every initial HTTP request uses the shared server-owned correlation filter; do not accept caller IDs or add slice-specific filters. Use a fresh operation ID for each worker claim and keep causal resource references separate. Scope MDC with `finally`/`AutoCloseable` cleanup. A correlation/operation ID is not actor identity.
 
 Structured logs use fixed application-owned `component`, `operation`, `result`, and error categories plus only necessary `*Ref` internal context and named aggregate counts. Never log customer/provider object identifiers, URIs/query strings, bodies, cursors, credentials/signatures, deduplication inputs, names, or business/property values. Normalize provider errors to a bounded owned enum. Known operational failures do not need stacks; unexpected failures use `SafeDiagnosticException`, never a raw throwable whose message/cause may be unsafe.

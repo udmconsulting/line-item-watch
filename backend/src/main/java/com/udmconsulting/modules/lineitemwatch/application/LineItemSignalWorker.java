@@ -101,7 +101,7 @@ public final class LineItemSignalWorker {
                         metrics.retried();
                     }
                 }
-                OperationalErrorCode operationalCode = operationalCode(failure.errorCode());
+                OperationalErrorCode operationalCode = failure.errorCode();
                 operation.stop(
                         recorded.terminal() ? OperationOutcome.FAILED : OperationOutcome.RETRY,
                         operationalCode);
@@ -110,7 +110,7 @@ public final class LineItemSignalWorker {
                         .addKeyValue("component", "line_item_watch")
                         .addKeyValue("operation", "signal_process")
                         .addKeyValue("result", recorded.terminal() ? "FAILED" : "RETRY")
-                        .addKeyValue("errorCode", failure.errorCode())
+                        .addKeyValue("errorCode", failure.errorCode().name())
                         .addKeyValue("tenantRef", claim.tenantId().value())
                         .addKeyValue("connectionRef", claim.connectionId().value())
                         .addKeyValue("signalRef", claim.signalId())
@@ -125,23 +125,15 @@ public final class LineItemSignalWorker {
 
     private static Failure classify(RuntimeException exception) {
         if (exception instanceof SignalProcessingException processing) {
-            return new Failure(processing.errorCode(), processing.retryable());
+            return new Failure(processing.errorCode(), false);
         }
         if (exception instanceof TransientDataAccessException
                 || exception instanceof ConcurrencyFailureException) {
-            return new Failure("TRANSIENT_DATABASE", true);
+            return new Failure(OperationalErrorCode.TRANSIENT_DATABASE, true);
         }
-        return new Failure("INTERNAL_PROCESSING", true);
+        return new Failure(OperationalErrorCode.INTERNAL_PROCESSING, true);
     }
 
-    private static OperationalErrorCode operationalCode(String errorCode) {
-        try {
-            return OperationalErrorCode.valueOf(errorCode);
-        } catch (IllegalArgumentException exception) {
-            return OperationalErrorCode.INTERNAL_PROCESSING;
-        }
-    }
-
-    private record Failure(String errorCode, boolean retryable) {
+    private record Failure(OperationalErrorCode errorCode, boolean retryable) {
     }
 }

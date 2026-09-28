@@ -77,7 +77,8 @@ class EstablishLineItemBaselineTest {
 
         assertThatThrownBy(() -> useCase.execute(tenantId, connectionId, dealId))
                 .isInstanceOfSatisfying(BaselineSyncException.class,
-                        exception -> assertThat(exception.retryable()).isFalse());
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(BaselineSyncFailure.MODULE_NOT_ENTITLED));
 
         assertThat(source.calls).isZero();
         assertThat(snapshotStore.calls).isZero();
@@ -94,7 +95,8 @@ class EstablishLineItemBaselineTest {
 
         assertThatThrownBy(() -> useCase.execute(tenantId, connectionId, dealId))
                 .isInstanceOfSatisfying(BaselineSyncException.class,
-                        exception -> assertThat(exception.retryable()).isFalse());
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(BaselineSyncFailure.CONNECTION_NOT_ACTIVE));
 
         assertThat(source.calls).isZero();
         assertThat(snapshotStore.calls).isZero();
@@ -123,7 +125,8 @@ class EstablishLineItemBaselineTest {
 
         assertThatThrownBy(() -> useCase.execute(tenantId, connectionId, dealId))
                 .isInstanceOfSatisfying(BaselineSyncException.class,
-                        exception -> assertThat(exception.retryable()).isTrue());
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(BaselineSyncFailure.PROVIDER_STATE_CHANGED));
 
         assertThat(snapshotStore.calls).isZero();
     }
@@ -134,7 +137,21 @@ class EstablishLineItemBaselineTest {
 
         assertThatThrownBy(() -> useCase.execute(otherTenant, connectionId, dealId))
                 .isInstanceOfSatisfying(BaselineSyncException.class,
-                        exception -> assertThat(exception.retryable()).isFalse());
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(BaselineSyncFailure.CONNECTION_NOT_FOUND));
+
+        assertThat(source.calls).isZero();
+        assertThat(snapshotStore.calls).isZero();
+    }
+
+    @Test
+    void rejectsMissingConnectionBeforeProviderAccess() {
+        connectionStore.connection = null;
+
+        assertThatThrownBy(() -> useCase.execute(tenantId, connectionId, dealId))
+                .isInstanceOfSatisfying(BaselineSyncException.class,
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(BaselineSyncFailure.CONNECTION_NOT_FOUND));
 
         assertThat(source.calls).isZero();
         assertThat(snapshotStore.calls).isZero();
@@ -142,11 +159,12 @@ class EstablishLineItemBaselineTest {
 
     @Test
     void providerFailureCommitsNothing() {
-        source.failure = new BaselineSyncException("sanitized provider failure", true);
+        source.failure = new BaselineSyncException(BaselineSyncFailure.PROVIDER_UNAVAILABLE);
 
         assertThatThrownBy(() -> useCase.execute(tenantId, connectionId, dealId))
                 .isInstanceOfSatisfying(BaselineSyncException.class,
-                        exception -> assertThat(exception.retryable()).isTrue());
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(BaselineSyncFailure.PROVIDER_UNAVAILABLE));
 
         assertThat(snapshotStore.calls).isZero();
     }
@@ -158,7 +176,23 @@ class EstablishLineItemBaselineTest {
 
         assertThatThrownBy(() -> useCase.execute(tenantId, connectionId, dealId))
                 .isInstanceOfSatisfying(BaselineSyncException.class,
-                        exception -> assertThat(exception.retryable()).isFalse());
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(
+                                        BaselineSyncFailure.PROVIDER_LINE_ITEM_IDENTITY_DUPLICATE));
+
+        assertThat(snapshotStore.calls).isZero();
+    }
+
+    @Test
+    void rejectsUnexpectedProviderDealIdentityBeforePersistence() {
+        source.result = new DealLineItemObservations(
+                new ProviderObjectId("deal-2"), List.of());
+
+        assertThatThrownBy(() -> useCase.execute(tenantId, connectionId, dealId))
+                .isInstanceOfSatisfying(BaselineSyncException.class,
+                        exception -> assertThat(exception.failure())
+                                .isEqualTo(
+                                        BaselineSyncFailure.PROVIDER_DEAL_IDENTITY_MISMATCH));
 
         assertThat(snapshotStore.calls).isZero();
     }

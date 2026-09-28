@@ -1,5 +1,6 @@
 package com.udmconsulting.modules.lineitemwatch.application;
 
+import com.udmconsulting.platform.supportability.OperationalErrorCode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
@@ -12,7 +13,7 @@ public interface LineItemSignalProcessingStore {
 
     FailureResult recordFailure(
             ClaimedLineItemSignal claim,
-            String errorCode,
+            OperationalErrorCode errorCode,
             boolean retryable,
             Instant failedAt,
             Duration retryDelay,

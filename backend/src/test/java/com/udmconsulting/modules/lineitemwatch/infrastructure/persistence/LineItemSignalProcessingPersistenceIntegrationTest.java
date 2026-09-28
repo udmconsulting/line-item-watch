@@ -22,6 +22,7 @@ import com.udmconsulting.platform.connection.domain.PlatformConnection;
 import com.udmconsulting.platform.connection.domain.Provider;
 import com.udmconsulting.platform.entitlement.application.EntitlementService;
 import com.udmconsulting.platform.module.domain.ProductModule;
+import com.udmconsulting.platform.supportability.OperationalErrorCode;
 import com.udmconsulting.platform.tenant.application.TenantService;
 import com.udmconsulting.platform.tenant.domain.Tenant;
 import java.math.BigDecimal;
@@ -335,9 +336,10 @@ class LineItemSignalProcessingPersistenceIntegrationTest {
         ClaimedLineItemSignal invalid = claim(processingTime);
         assertThatThrownBy(() -> processingStore.process(invalid, time.plusSeconds(10)))
                 .isInstanceOf(SignalProcessingException.class)
-                .satisfies(error -> assertThat(((SignalProcessingException) error).retryable()).isFalse());
+                .satisfies(error -> assertThat(((SignalProcessingException) error).errorCode())
+                        .isEqualTo(OperationalErrorCode.INVALID_SIGNAL_VALUE));
         assertThat(processingStore.recordFailure(
-                invalid, "INVALID_SIGNAL_VALUE", false, time.plusSeconds(10),
+                invalid, OperationalErrorCode.INVALID_SIGNAL_VALUE, false, time.plusSeconds(10),
                 Duration.ofSeconds(5), 8).terminal()).isTrue();
 
         ClaimedLineItemSignal unrelated = claim(processingTime.plusSeconds(1));
@@ -361,13 +363,13 @@ class LineItemSignalProcessingPersistenceIntegrationTest {
         Instant processingTime = Instant.now().plusSeconds(1);
         ClaimedLineItemSignal claim = claim(processingTime);
         processingStore.recordFailure(
-                claim, "TRANSIENT_DATABASE", true, time.plusSeconds(1),
+                claim, OperationalErrorCode.TRANSIENT_DATABASE, true, time.plusSeconds(1),
                 Duration.ofSeconds(5), 8);
 
         assertThatThrownBy(() -> processingStore.process(claim, time.plusSeconds(2)))
                 .isInstanceOf(SignalProcessingException.class)
                 .satisfies(error -> assertThat(((SignalProcessingException) error).errorCode())
-                        .isEqualTo("STALE_CLAIM"));
+                        .isEqualTo(OperationalErrorCode.STALE_CLAIM));
     }
 
     @Test
@@ -382,7 +384,7 @@ class LineItemSignalProcessingPersistenceIntegrationTest {
         ClaimedLineItemSignal first = processingStore.claimNext(
                 firstAttemptAt, Duration.ofMinutes(2), 2).orElseThrow();
         assertThat(processingStore.recordFailure(
-                first, "TRANSIENT_DATABASE", true, firstAttemptAt,
+                first, OperationalErrorCode.TRANSIENT_DATABASE, true, firstAttemptAt,
                 Duration.ofSeconds(5), 2)).isEqualTo(
                         new LineItemSignalProcessingStore.FailureResult(true, false));
         assertThat(processingStore.claimNext(
@@ -392,12 +394,43 @@ class LineItemSignalProcessingPersistenceIntegrationTest {
                 firstAttemptAt.plusSeconds(5), Duration.ofMinutes(2), 2).orElseThrow();
         assertThat(second.attempt()).isEqualTo(2);
         assertThat(processingStore.recordFailure(
-                second, "TRANSIENT_DATABASE", true, firstAttemptAt.plusSeconds(5),
+                second, OperationalErrorCode.TRANSIENT_DATABASE, true,
+                firstAttemptAt.plusSeconds(5),
                 Duration.ofSeconds(10), 2)).isEqualTo(
                         new LineItemSignalProcessingStore.FailureResult(true, true));
         assertThat(jdbcTemplate.queryForObject("""
                 SELECT status FROM line_item_watch_signal_processing WHERE signal_id = ?
                 """, String.class, second.signalId())).isEqualTo("FAILED");
+    }
+
+    @Test
+    void exhaustionPersistsTheEnumOwnedRetryExhaustedValue() {
+        Fixture fixture = fixture("retry-exhausted-code");
+        Instant occurred = Instant.parse("2026-09-27T12:00:00Z");
+        signalStore.capture(fixture.tenant.id(), fixture.connection.id(), List.of(
+                signal(fixture, "signal", "line-1", occurred,
+                        LineItemChangeSignalType.PROPERTY_CHANGED,
+                        MonitoredLineItemProperty.NAME, "value", null, null, null)));
+        Instant firstAttemptAt = Instant.now().plusSeconds(1);
+        ClaimedLineItemSignal first = processingStore.claimNext(
+                firstAttemptAt, Duration.ofMinutes(2), 2).orElseThrow();
+        processingStore.recordFailure(
+                first,
+                OperationalErrorCode.TRANSIENT_DATABASE,
+                true,
+                firstAttemptAt,
+                Duration.ofSeconds(5),
+                2);
+
+        assertThat(processingStore.claimNext(
+                firstAttemptAt.plusSeconds(5), Duration.ofMinutes(2), 1)).isEmpty();
+        assertThat(jdbcTemplate.queryForMap("""
+                SELECT status, last_error_code
+                FROM line_item_watch_signal_processing
+                WHERE signal_id = ?
+                """, first.signalId()))
+                .containsEntry("status", "FAILED")
+                .containsEntry("last_error_code", OperationalErrorCode.RETRY_EXHAUSTED.name());
     }
 
     @Test
