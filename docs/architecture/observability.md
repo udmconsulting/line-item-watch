@@ -28,6 +28,8 @@ Each claimed worker attempt receives an independent `operationId`; `signalRef` i
 
 Errors must be sanitized before they reach logs or monitoring services. `providerErrorCode` accepts only bounded application-owned categories, never raw provider strings, and never becomes a metric tag. Known operational failures log a fixed category without an unnecessary throwable. Unexpected failures use a reusable diagnostic throwable that retains exception classes and bounded stack frames but suppresses original/cause messages and suppressed exceptions. Access to telemetry follows least privilege, and any selected external telemetry vendor must be evaluated and recorded as a subprocessor where applicable.
 
+Typed domain/application failures remain separate from the shared operational registry. A logging or metrics boundary that needs aggregation maps them explicitly to `OperationalErrorCode`; merely adding a domain failure code does not expose it publicly or make it a metric tag. Diagnostic message wording is never used for that mapping.
+
 Micrometer records vendor-neutral `application.operation.duration` timers with exactly four bounded tags: `component`, `operation`, `outcome`, and `error_code`. Operation and error values come from closed application enums, never URLs, identifiers, cursors, or provider-controlled values. Existing `line_item_watch.processing.*` metrics remain the durable-worker operational series.
 
 ## Operational behavior

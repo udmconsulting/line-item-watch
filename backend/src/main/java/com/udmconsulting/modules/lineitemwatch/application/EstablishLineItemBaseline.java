@@ -50,16 +50,16 @@ public final class EstablishLineItemBaseline {
 
         DealLineItemObservations observed = baselineSource.readDeal(connection, dealId);
         if (!dealId.equals(observed.dealId())) {
-            throw new BaselineSyncException("Provider returned an unexpected Deal identity", false);
+            throw new BaselineSyncException(BaselineSyncFailure.PROVIDER_DEAL_IDENTITY_MISMATCH);
         }
         HashSet<ProviderObjectId> uniqueLineItems = new HashSet<>();
         observed.lineItems().forEach(item -> {
             if (!uniqueLineItems.add(item.lineItemId())) {
-                throw new BaselineSyncException("Provider returned a duplicate Line Item identity", false);
+                throw new BaselineSyncException(
+                        BaselineSyncFailure.PROVIDER_LINE_ITEM_IDENTITY_DUPLICATE);
             }
             if (!item.associatedDealIds().contains(dealId)) {
-                throw new BaselineSyncException(
-                        "Provider state changed while the Deal baseline was read", true);
+                throw new BaselineSyncException(BaselineSyncFailure.PROVIDER_STATE_CHANGED);
             }
         });
 
@@ -92,19 +92,20 @@ public final class EstablishLineItemBaseline {
             TenantId tenantId, PlatformConnectionId connectionId) {
         PlatformConnection connection = connectionService.findForTenant(tenantId, connectionId)
                 .orElseThrow(() -> new BaselineSyncException(
-                        "Platform Connection was not found for Tenant", false));
+                        BaselineSyncFailure.CONNECTION_NOT_FOUND));
         if (connection.provider() != Provider.HUBSPOT) {
-            throw new BaselineSyncException("Platform Connection provider is not supported", false);
+            throw new BaselineSyncException(
+                    BaselineSyncFailure.CONNECTION_PROVIDER_UNSUPPORTED);
         }
         if (connection.status() != ConnectionStatus.ACTIVE) {
-            throw new BaselineSyncException("Platform Connection is not active", false);
+            throw new BaselineSyncException(BaselineSyncFailure.CONNECTION_NOT_ACTIVE);
         }
         return connection;
     }
 
     private void requireEntitlement(TenantId tenantId) {
         if (!entitlementService.isEnabled(tenantId, ProductModule.LINE_ITEM_WATCH)) {
-            throw new BaselineSyncException("Tenant is not entitled to LINE_ITEM_WATCH", false);
+            throw new BaselineSyncException(BaselineSyncFailure.MODULE_NOT_ENTITLED);
         }
     }
 

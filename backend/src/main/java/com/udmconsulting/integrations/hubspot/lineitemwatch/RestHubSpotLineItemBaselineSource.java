@@ -3,6 +3,7 @@ package com.udmconsulting.integrations.hubspot.lineitemwatch;
 import com.udmconsulting.integrations.hubspot.config.HubSpotOAuthProperties;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotAccessTokenProvider;
 import com.udmconsulting.modules.lineitemwatch.application.BaselineSyncException;
+import com.udmconsulting.modules.lineitemwatch.application.BaselineSyncFailure;
 import com.udmconsulting.modules.lineitemwatch.application.DealLineItemObservations;
 import com.udmconsulting.modules.lineitemwatch.application.LineItemBaselineSource;
 import com.udmconsulting.modules.lineitemwatch.domain.BillingStart;
@@ -93,9 +94,9 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
         JsonNode deal = get(
                 DEAL_PATH.formatted(pathSegment(dealId.value())),
                 accessToken,
-                "HubSpot Deal was not found",
-                false);
-        validateObjectIdentity(deal, dealId, "Deal");
+                BaselineSyncFailure.PROVIDER_DEAL_NOT_FOUND);
+        validateObjectIdentity(
+                deal, dealId, BaselineSyncFailure.PROVIDER_DEAL_IDENTITY_MISMATCH);
 
         Set<ProviderObjectId> lineItemIds = readAssociations(
                 DEAL_LINE_ITEMS_PATH, dealId, accessToken);
@@ -104,14 +105,15 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
             JsonNode lineItem = get(
                     lineItemPath(lineItemId),
                     accessToken,
-                    "Associated HubSpot Line Item was not found",
-                    true);
-            validateObjectIdentity(lineItem, lineItemId, "Line Item");
+                    BaselineSyncFailure.PROVIDER_STATE_CHANGED);
+            validateObjectIdentity(
+                    lineItem,
+                    lineItemId,
+                    BaselineSyncFailure.PROVIDER_LINE_ITEM_IDENTITY_MISMATCH);
             Set<ProviderObjectId> dealIds = readAssociations(
                     LINE_ITEM_DEALS_PATH, lineItemId, accessToken);
             if (!dealIds.contains(dealId)) {
-                throw new BaselineSyncException(
-                        "Provider state changed while the Deal baseline was read", true);
+                throw new BaselineSyncException(BaselineSyncFailure.PROVIDER_STATE_CHANGED);
             }
             observations.add(toObservation(lineItem, lineItemId, dealIds));
         }
@@ -121,8 +123,7 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
     private JsonNode get(
             String path,
             String accessToken,
-            String notFoundMessage,
-            boolean changedWhenNotFound) {
+            BaselineSyncFailure notFoundFailure) {
         try {
             return restClient.get()
                     .uri(path)
@@ -134,13 +135,12 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
                             return readBody(response.getBody());
                         }
                         if (status == 404) {
-                            throw new BaselineSyncException(
-                                    notFoundMessage, changedWhenNotFound);
+                            throw new BaselineSyncException(notFoundFailure);
                         }
                         throw classify(status);
                     });
         } catch (ResourceAccessException exception) {
-            throw new BaselineSyncException("HubSpot baseline read was unavailable", true);
+            throw new BaselineSyncException(BaselineSyncFailure.PROVIDER_UNAVAILABLE);
         }
     }
 
@@ -211,12 +211,12 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
                         }
                         if (status == 404) {
                             throw new BaselineSyncException(
-                                    "Provider state changed while the Deal baseline was read", true);
+                                    BaselineSyncFailure.PROVIDER_STATE_CHANGED);
                         }
                         throw classify(status);
                     });
         } catch (ResourceAccessException exception) {
-            throw new BaselineSyncException("HubSpot baseline read was unavailable", true);
+            throw new BaselineSyncException(BaselineSyncFailure.PROVIDER_UNAVAILABLE);
         }
     }
 
@@ -306,18 +306,18 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
     }
 
     private void validateObjectIdentity(
-            JsonNode object, ProviderObjectId expectedId, String objectName) {
+            JsonNode object,
+            ProviderObjectId expectedId,
+            BaselineSyncFailure identityMismatchFailure) {
         if (!expectedId.value().equals(requiredHubSpotObjectId(object, "id"))) {
-            throw new BaselineSyncException(
-                    "HubSpot returned an unexpected " + objectName + " identity", false);
+            throw new BaselineSyncException(identityMismatchFailure);
         }
         JsonNode archived = object.get("archived");
         if (archived == null || !archived.isBoolean()) {
             throw contractFailure();
         }
         if (archived.booleanValue()) {
-            throw new BaselineSyncException(
-                    "Provider state changed while the Deal baseline was read", true);
+            throw new BaselineSyncException(BaselineSyncFailure.PROVIDER_STATE_CHANGED);
         }
     }
 
@@ -341,10 +341,11 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
 
     private static RuntimeException classify(int status) {
         if (status == 401 || status == 403) {
-            return new BaselineSyncException("HubSpot baseline read was not authorized", false);
+            return new BaselineSyncException(
+                    BaselineSyncFailure.PROVIDER_AUTHORIZATION_REJECTED);
         }
         if (status == 429 || status >= 500) {
-            return new BaselineSyncException("HubSpot baseline read was unavailable", true);
+            return new BaselineSyncException(BaselineSyncFailure.PROVIDER_UNAVAILABLE);
         }
         return contractFailure();
     }
@@ -418,7 +419,10 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
         if (decoded.isEmpty()) {
             throw contractFailure();
         }
-        return pathSegment(decoded);
+        if (!decoded.matches("[1-9][0-9]*")) {
+            throw contractFailure();
+        }
+        return decoded;
     }
 
     private static String optionalText(JsonNode object, String field) {
@@ -438,17 +442,17 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
 
     private static String pathSegment(String value) {
         if (!value.matches("[1-9][0-9]*")) {
-            throw new BaselineSyncException("HubSpot object ID is invalid", false);
+            throw new BaselineSyncException(BaselineSyncFailure.PROVIDER_OBJECT_ID_INVALID);
         }
         return value;
     }
 
     private static BaselineSyncException contractFailure() {
-        return new BaselineSyncException("HubSpot returned an invalid baseline response", false);
+        return new BaselineSyncException(BaselineSyncFailure.PROVIDER_RESPONSE_INVALID);
     }
 
     private static BaselineSyncException incompleteAssociationFailure() {
         return new BaselineSyncException(
-                "HubSpot baseline association read was incomplete", true);
+                BaselineSyncFailure.PROVIDER_ASSOCIATION_READ_INCOMPLETE);
     }
 }

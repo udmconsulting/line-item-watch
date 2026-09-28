@@ -1,6 +1,7 @@
 package com.udmconsulting.modules.lineitemwatch.infrastructure.persistence;
 
 import com.udmconsulting.modules.lineitemwatch.application.BaselineSyncException;
+import com.udmconsulting.modules.lineitemwatch.application.BaselineSyncFailure;
 import com.udmconsulting.modules.lineitemwatch.application.LineItemSnapshotStore;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemObservation;
 import com.udmconsulting.modules.lineitemwatch.domain.SnapshotKind;
@@ -47,17 +48,17 @@ public class JdbcLineItemSnapshotStore implements LineItemSnapshotStore {
 
         PlatformConnection connection = connectionService.lockForCommit(tenantId, connectionId)
                 .orElseThrow(() -> new BaselineSyncException(
-                        "Platform Connection was not found for Tenant", false));
+                        BaselineSyncFailure.CONNECTION_NOT_FOUND));
         if (connection.provider() != Provider.HUBSPOT) {
-            throw new BaselineSyncException("Platform Connection provider is not supported", false);
+            throw new BaselineSyncException(
+                    BaselineSyncFailure.CONNECTION_PROVIDER_UNSUPPORTED);
         }
         if (connection.status() != ConnectionStatus.ACTIVE) {
-            throw new BaselineSyncException("Platform Connection is not active", false);
+            throw new BaselineSyncException(BaselineSyncFailure.CONNECTION_NOT_ACTIVE);
         }
         if (!entitlementService.lockEnabledForCommit(
                 tenantId, ProductModule.LINE_ITEM_WATCH)) {
-            throw new BaselineSyncException(
-                    "Tenant is not entitled to LINE_ITEM_WATCH", false);
+            throw new BaselineSyncException(BaselineSyncFailure.MODULE_NOT_ENTITLED);
         }
 
         int createdLineItems = 0;
