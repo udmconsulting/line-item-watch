@@ -72,6 +72,8 @@ class HubSpotV3SignatureVerifierTest {
     void rejectsMissingMalformedAndWrongLengthSignatures() {
         byte[] body = "[]".getBytes(StandardCharsets.UTF_8);
 
+        assertThatThrownBy(() -> verifier.verify("POST", "signature", TIMESTAMP, null))
+                .isInstanceOf(HubSpotWebhookAuthenticationException.class);
         assertThatThrownBy(() -> verifier.verify("POST", null, TIMESTAMP, body))
                 .isInstanceOf(HubSpotWebhookAuthenticationException.class);
         assertThatThrownBy(() -> verifier.verify("POST", "%%%", TIMESTAMP, body))

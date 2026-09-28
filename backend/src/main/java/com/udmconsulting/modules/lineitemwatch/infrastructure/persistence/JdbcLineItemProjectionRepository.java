@@ -56,8 +56,9 @@ final class JdbcLineItemProjectionRepository {
                 billing_frequency, billing_start_date, billing_start_delay_unit,
                 billing_start_delay_count, recurring_billing_period,
                 provider_created_at, provider_updated_at, observed_at,
-                known_properties, deal_set_complete, deleted_at
-            ) VALUES (?, ?, ?, 'LATEST', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::text[], ?, ?)
+                known_properties, deal_set_complete, deleted_at,
+                history_coverage_mode, history_observed_from
+            ) VALUES (?, ?, ?, 'LATEST', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::text[], ?, ?, ?, ?)
             ON CONFLICT (line_item_id, snapshot_kind) DO UPDATE SET
                 name = EXCLUDED.name,
                 quantity = EXCLUDED.quantity,
@@ -75,7 +76,9 @@ final class JdbcLineItemProjectionRepository {
                 persisted_at = CURRENT_TIMESTAMP,
                 known_properties = EXCLUDED.known_properties,
                 deal_set_complete = EXCLUDED.deal_set_complete,
-                deleted_at = EXCLUDED.deleted_at
+                deleted_at = EXCLUDED.deleted_at,
+                history_coverage_mode = EXCLUDED.history_coverage_mode,
+                history_observed_from = EXCLUDED.history_observed_from
             """;
 
     private static final String UPSERT_AUDIT = """
@@ -324,7 +327,9 @@ final class JdbcLineItemProjectionRepository {
                 Timestamp.from(projection.observedAt()),
                 knownPropertiesArrayLiteral(properties),
                 projection.dealSetComplete(),
-                timestamp(projection.deletedAt()));
+                timestamp(projection.deletedAt()),
+                projection.historyCoverage().mode().name(),
+                Timestamp.from(projection.historyCoverage().observedFrom()));
         replaceSnapshotDeals(
                 tenantId,
                 connectionId,
@@ -382,9 +387,11 @@ final class JdbcLineItemProjectionRepository {
             for (ProviderObjectId dealId : event.dealContext()) {
                 jdbcTemplate.update("""
                         INSERT INTO line_item_watch_audit_event_deal_context (
-                            tenant_id, connection_id, audit_event_id, external_deal_id
-                        ) VALUES (?, ?, ?, ?)
-                        """, tenantId.value(), connectionId.value(), eventId, dealId.value());
+                            tenant_id, connection_id, audit_event_id, external_deal_id,
+                            occurred_at, semantic_key
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """, tenantId.value(), connectionId.value(), eventId, dealId.value(),
+                        Timestamp.from(event.occurredAt()), event.semanticKey());
             }
         }
 

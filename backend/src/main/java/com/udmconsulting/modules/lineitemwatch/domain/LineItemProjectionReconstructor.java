@@ -87,6 +87,9 @@ public final class LineItemProjectionReconstructor {
                     .min(Instant::compareTo)
                     .orElseThrow();
         }
+        Instant coverageObservedFrom = state.baselineObservedFrom == null
+                ? earliestEvidence(checkpoints, signals)
+                : state.baselineObservedFrom;
         return new LineItemProjection(
                 state.properties,
                 state.presentDeals(),
@@ -95,7 +98,22 @@ public final class LineItemProjectionReconstructor {
                 state.providerUpdatedAt,
                 observedAt,
                 state.deletedAt,
+                new LineItemHistoryCoverage(
+                        state.baselineObservedFrom == null
+                                ? LineItemHistoryCoverage.Mode.SIGNAL_FIRST
+                                : LineItemHistoryCoverage.Mode.BASELINE_ANCHORED,
+                        coverageObservedFrom),
                 state.events.stream().map(MutableEvent::immutable).toList());
+    }
+
+    private static Instant earliestEvidence(
+            List<LineItemProjectionCheckpoint> checkpoints,
+            List<LineItemChangeSignal> signals) {
+        return java.util.stream.Stream.concat(
+                        checkpoints.stream().map(LineItemProjectionCheckpoint::observedAt),
+                        signals.stream().map(LineItemChangeSignal::occurredAt))
+                .min(Instant::compareTo)
+                .orElseThrow();
     }
 
     private static void applyCreated(
@@ -415,6 +433,7 @@ public final class LineItemProjectionReconstructor {
         private Instant providerUpdatedAt;
         private Instant observedAt;
         private Instant deletedAt;
+        private Instant baselineObservedFrom;
         private MutableEvent creationEvent;
 
         private State() {
@@ -426,6 +445,9 @@ public final class LineItemProjectionReconstructor {
         private void applyCheckpoint(LineItemProjectionCheckpoint checkpoint) {
             if (lifecycle == Lifecycle.DELETED) {
                 return;
+            }
+            if (checkpoint.kind() == SnapshotKind.BASELINE && baselineObservedFrom == null) {
+                baselineObservedFrom = checkpoint.observedAt();
             }
             properties.clear();
             properties.putAll(checkpoint.properties());

@@ -228,6 +228,23 @@ class LineItemProjectionReconstructorTest {
                 .isEqualTo(ObservedValue.value("Checkpoint"));
     }
 
+    @Test
+    void baselineIgnoredAfterEarlierDeletionDoesNotClaimBaselineAnchoredCoverage() {
+        Instant baselineTime = Instant.parse("2026-09-27T10:00:00Z");
+        Instant deletedAt = baselineTime.minusSeconds(60);
+
+        LineItemProjection result = reconstructor.reconstruct(
+                LINE_ITEM,
+                List.of(checkpoint(baselineTime, "Stale baseline")),
+                List.of(deleted("deleted-before-baseline", deletedAt)));
+
+        assertThat(result.deletedAt()).isEqualTo(deletedAt);
+        assertThat(result.historyCoverage().mode())
+                .isEqualTo(LineItemHistoryCoverage.Mode.SIGNAL_FIRST);
+        assertThat(result.historyCoverage().observedFrom()).isEqualTo(deletedAt);
+        assertThat(result.properties().values()).containsOnly(ObservedValue.unknown());
+    }
+
     private static LineItemProjectionCheckpoint checkpoint(Instant observedAt, String name) {
         LineItemObservation observation = new LineItemObservation(
                 LINE_ITEM,

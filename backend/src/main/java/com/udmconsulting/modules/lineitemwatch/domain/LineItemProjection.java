@@ -16,6 +16,7 @@ public record LineItemProjection(
         Instant providerUpdatedAt,
         Instant observedAt,
         Instant deletedAt,
+        LineItemHistoryCoverage historyCoverage,
         List<LineItemAuditEvent> auditEvents) {
 
     public LineItemProjection {
@@ -29,6 +30,7 @@ public record LineItemProjection(
         properties = Map.copyOf(copied);
         associatedDealIds = Set.copyOf(new LinkedHashSet<>(associatedDealIds));
         Objects.requireNonNull(observedAt, "observedAt must not be null");
+        Objects.requireNonNull(historyCoverage, "historyCoverage must not be null");
         auditEvents = List.copyOf(auditEvents);
     }
 }

@@ -28,6 +28,10 @@ hubspot:
   webhook:
     enabled: ${HUBSPOT_WEBHOOK_ENABLED:false}
     public-uri: ${HUBSPOT_WEBHOOK_PUBLIC_URI:}
+  ui-extension:
+    enabled: ${HUBSPOT_UI_EXTENSION_ENABLED:false}
+    public-base-uri: ${HUBSPOT_UI_EXTENSION_PUBLIC_BASE_URI:}
+    app-id: ${HUBSPOT_UI_EXTENSION_APP_ID:}
   credentials:
     key-id: ${HUBSPOT_CREDENTIAL_KEY_ID}
     encryption-key: ${HUBSPOT_CREDENTIAL_ENCRYPTION_KEY}
