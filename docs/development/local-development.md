@@ -2,7 +2,7 @@
 
 ## Repository status
 
-The repository contains HubSpot app project metadata, read-only feasibility probes, and one backend Maven module under `backend/`. The backend implements Platform Core identity/entitlements, HubSpot OAuth installation, encrypted refresh credentials, on-demand refresh, internal uninstall, the internal one-Deal `LINE_ITEM_WATCH` observation use case, a conditional authenticated webhook receiver, and an opt-in provider-free signal worker. It exposes install/callback HTTP endpoints but no public baseline, business administration, recovery, or disconnect endpoint.
+The repository contains HubSpot app project metadata, read-only feasibility probes, and one backend Maven module under `backend/`. The backend implements Platform Core identity/entitlements, HubSpot OAuth installation, encrypted refresh credentials, on-demand refresh, internal uninstall, the internal one-Deal `LINE_ITEM_WATCH` observation use case, a conditional authenticated webhook receiver, an opt-in provider-free signal worker, and a conditional signed Deal audit read endpoint. It exposes install/callback HTTP endpoints but no public baseline, business administration, recovery, or disconnect endpoint.
 
 ## Prerequisites
 
@@ -61,6 +61,18 @@ LINE_ITEM_WATCH_PROCESSING_ENABLED=true
 
 Optional settings are `LINE_ITEM_WATCH_PROCESSING_POLL_DELAY` (`1s`), `LINE_ITEM_WATCH_PROCESSING_MAX_PER_POLL` (`50`), `LINE_ITEM_WATCH_PROCESSING_LEASE_DURATION` (`2m`), `LINE_ITEM_WATCH_PROCESSING_MAX_ATTEMPTS` (`8`), `LINE_ITEM_WATCH_PROCESSING_BASE_BACKOFF` (`5s`), and `LINE_ITEM_WATCH_PROCESSING_MAX_BACKOFF` (`15m`). A terminal failure blocks later signals only for its Line Item. There is no P.5 recovery API; inspect the sanitized durable status and use controlled operator database tooling only after correcting the cause.
 
+### Deal audit read configuration
+
+The P.6 endpoint is off by default, so local startup needs no public read origin. Enable it only behind the exact HTTPS origin registered for HubSpot signed fetches:
+
+```text
+HUBSPOT_UI_EXTENSION_ENABLED=true
+HUBSPOT_UI_EXTENSION_PUBLIC_BASE_URI=https://<exact-public-host>
+HUBSPOT_UI_EXTENSION_APP_ID=<numeric-app-id>
+```
+
+The base URI must be an origin only: no path, user info, query, or fragment. The endpoint is `GET /api/v1/line-item-watch/deals/{dealId}/audit`. It is not a local shared-secret API and cannot be called successfully without a current HubSpot v3 signature over the configured public URI and signed metadata. Do not use `Host` or forwarding headers as signature configuration. No CORS wildcard, cookie credential, provider lookup, or local rate limiter is introduced; production edge controls remain deployment work.
+
 Run the complete backend verification suite with Docker available:
 
 ```sh
@@ -68,7 +80,7 @@ cd backend
 ./mvnw verify
 ```
 
-The suite starts PostgreSQL 18.6 through Testcontainers, applies Liquibase migrations, validates with Hibernate, exercises OAuth/credential concurrency, checkpoint/signal/audit persistence and isolation, deterministic reconstruction and worker concurrency, webhook lifecycle races, signature/parser/MVC contracts, provider HTTP contracts, and ArchUnit rules. It does not call live HubSpot or use the Compose database. Guarded live P.3 harnesses and the provider-free retained P.4 evidence harness are documented in [Testing](testing.md). Controlled P.4 genuine-delivery acceptance is complete.
+The suite starts PostgreSQL 18.6 through Testcontainers, applies and upgrade-tests Liquibase migrations, validates with Hibernate, exercises OAuth/credential concurrency, checkpoint/signal/audit persistence and isolation, deterministic reconstruction and worker concurrency, webhook lifecycle races, signed-read authentication/API contracts and pagination, provider HTTP contracts, and ArchUnit rules. It does not call live HubSpot or use the Compose database. Guarded live P.3 harnesses and the provider-free retained P.4 evidence harness are documented in [Testing](testing.md). Controlled P.4 genuine-delivery acceptance is complete.
 
 ## Verified commands
 

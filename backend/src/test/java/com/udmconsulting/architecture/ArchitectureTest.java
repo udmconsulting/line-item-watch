@@ -66,6 +66,14 @@ class ArchitectureTest {
                     "..integrations.hubspot.oauth.infrastructure..");
 
     @ArchTest
+    static final ArchRule DEAL_AUDIT_READ_DOES_NOT_USE_PROVIDER_READ_ADAPTERS = noClasses()
+            .that().resideInAPackage("..integrations.hubspot.lineitemwatch.audit..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "..integrations.hubspot.oauth..",
+                    "com.udmconsulting.integrations.hubspot.lineitemwatch",
+                    "org.springframework.web.client..");
+
+    @ArchTest
     static final ArchRule PERSISTENCE_TYPES_STAY_IN_PERSISTENCE_PACKAGES = classes()
             .that().areAnnotatedWith("jakarta.persistence.Entity")
             .should().resideInAPackage("..infrastructure.persistence..");

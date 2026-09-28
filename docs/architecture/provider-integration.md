@@ -75,6 +75,14 @@ P.5 processing never invokes HubSpot. It combines immutable `BASELINE`, replacea
 
 The worker is disabled by default. When enabled, it claims PostgreSQL processing rows with leases and `SKIP LOCKED`, serializes work by Tenant/connection/Line Item, rebuilds the complete deterministic history, writes semantic audit/source/Deal context and LATEST, and marks the signal processed in one transaction. No OAuth credential or provider client is present in this processing path.
 
+## Implemented signed Deal audit read
+
+`GET /api/v1/line-item-watch/deals/{dealId}/audit` is conditional on `hubspot.ui-extension.enabled=true`. It validates the HubSpot v3 signed-fetch HMAC and timestamp against a configured canonical public HTTPS origin, requires signed `portalId`, `userId`, `userEmail`, and configured `appId` metadata exactly once, and ignores host/forwarding headers when constructing signature input. Query names, duplicates, lengths, body absence, cursor shape, and a hard page size of 20 are validated before access.
+
+The authenticated account resolves server-side to one `ACTIVE` HubSpot Platform Connection, Tenant, and enabled `LINE_ITEM_WATCH` entitlement. The Deal ID never participates in Tenant or connection resolution and does not prove per-user or per-record permissions. Unknown, inactive, reauthentication-required, and unentitled account states use an enumeration-safe account-unavailable outcome.
+
+Both independently requested page domains read only local module projections in one repeatable-read transaction. There is no token acquisition or HubSpot request. The DTO uses centralized product field identifiers, explicit `UNKNOWN`/`ABSENT`/`VALUE` states, Unicode-safe value truncation, distinct current/deletion membership, and explicit history coverage. `observedFrom` is an evidence boundary, not a reconciliation or complete-history guarantee; semantic events earlier than it are excluded. See [ADR 0008](../adr/0008-deal-scoped-audit-read-boundary.md).
+
 ## Two different extension operations
 
 ### Adding a Product Module

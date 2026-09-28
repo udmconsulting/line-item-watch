@@ -15,6 +15,10 @@ hubspot:
     # When enabled, set an externally reachable HTTPS URI ending in:
     # /integrations/hubspot/webhooks
     # Supply public-uri through HUBSPOT_WEBHOOK_PUBLIC_URI.
+  ui-extension:
+    enabled: false
+    # When enabled, supply the exact public HTTPS origin and numeric HubSpot app ID
+    # through HUBSPOT_UI_EXTENSION_PUBLIC_BASE_URI and HUBSPOT_UI_EXTENSION_APP_ID.
   credentials:
     key-id: local-acceptance-2
     encryption-key: __SET_LOCAL_BASE64_AES_256_KEY__
