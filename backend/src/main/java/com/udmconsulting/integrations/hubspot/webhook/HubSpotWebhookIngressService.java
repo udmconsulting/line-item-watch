@@ -100,21 +100,29 @@ final class HubSpotWebhookIngressService {
             }
             captured += result.captured();
             duplicates += result.duplicates();
-            LOGGER.info(
-                    "HubSpot webhook signal group captured tenantId={} connectionId={} "
-                            + "events={} captured={} duplicates={}",
-                    connection.tenantId().value(),
-                    connection.id().value(),
-                    signals.size(),
-                    result.captured(),
-                    result.duplicates());
+            LOGGER.atInfo()
+                    .addKeyValue("component", "hubspot_webhook")
+                    .addKeyValue("operation", "capture_signal_group")
+                    .addKeyValue("result", "SUCCESS")
+                    .addKeyValue("tenantRef", connection.tenantId().value())
+                    .addKeyValue("connectionRef", connection.id().value())
+                    .addKeyValue("eventCount", signals.size())
+                    .addKeyValue("capturedCount", result.captured())
+                    .addKeyValue("duplicateCount", result.duplicates())
+                    .log("HubSpot webhook signal group captured");
         }
 
         IngestionResult result = new IngestionResult(
                 parsed.totalEvents(), captured, duplicates, ignored);
-        LOGGER.info(
-                "HubSpot webhook batch completed events={} captured={} duplicates={} ignored={}",
-                result.events(), result.captured(), result.duplicates(), result.ignored());
+        LOGGER.atInfo()
+                .addKeyValue("component", "hubspot_webhook")
+                .addKeyValue("operation", "webhook_ingest")
+                .addKeyValue("result", "SUCCESS")
+                .addKeyValue("eventCount", result.events())
+                .addKeyValue("capturedCount", result.captured())
+                .addKeyValue("duplicateCount", result.duplicates())
+                .addKeyValue("ignoredCount", result.ignored())
+                .log("HubSpot webhook batch completed");
         return result;
     }
 

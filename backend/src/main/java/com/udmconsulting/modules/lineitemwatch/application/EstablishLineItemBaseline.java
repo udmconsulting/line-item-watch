@@ -65,18 +65,19 @@ public final class EstablishLineItemBaseline {
 
         PersistenceResult persisted = snapshotStore.establish(
                 tenantId, connectionId, observed.lineItems());
-        LOGGER.info(
-                "Line Item baseline synchronization completed tenantId={} connectionId={} "
-                        + "observed={} createdItems={} createdBaselines={} createdLatest={} "
-                        + "updatedLatest={} unchangedLatest={}",
-                tenantId.value(),
-                connectionId.value(),
-                observed.lineItems().size(),
-                persisted.createdLineItems(),
-                persisted.createdBaselines(),
-                persisted.createdLatestSnapshots(),
-                persisted.updatedLatestSnapshots(),
-                persisted.unchangedLatestSnapshots());
+        LOGGER.atInfo()
+                .addKeyValue("component", "line_item_watch")
+                .addKeyValue("operation", "baseline_sync")
+                .addKeyValue("result", "SUCCESS")
+                .addKeyValue("tenantRef", tenantId.value())
+                .addKeyValue("connectionRef", connectionId.value())
+                .addKeyValue("observedCount", observed.lineItems().size())
+                .addKeyValue("createdItemCount", persisted.createdLineItems())
+                .addKeyValue("createdBaselineCount", persisted.createdBaselines())
+                .addKeyValue("createdLatestCount", persisted.createdLatestSnapshots())
+                .addKeyValue("updatedLatestCount", persisted.updatedLatestSnapshots())
+                .addKeyValue("unchangedLatestCount", persisted.unchangedLatestSnapshots())
+                .log("Line Item baseline synchronization completed");
         return new Result(
                 dealId,
                 observed.lineItems().size(),

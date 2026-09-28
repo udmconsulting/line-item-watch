@@ -35,7 +35,15 @@ Mandatory configuration should fail fast where appropriate. Secrets and OAuth to
 
 ## Errors and observability
 
-Do not silently swallow failures. Separate domain outcomes from technical failures, retain non-sensitive diagnostic context, retry only classified retryable failures, design idempotent event/job processing, and expose terminal failures. Operationally important behavior requires structured logs, processing status, health signals, and actionable alerts.
+Do not silently swallow failures. Public error codes are localization-neutral identifiers, never localized text or raw technical/provider detail. Keep the closed public registry separate from bounded internal operational categories and protocol-specific response shapes.
+
+Every initial HTTP request uses the shared server-owned correlation filter; do not accept caller IDs or add slice-specific filters. Use a fresh operation ID for each worker claim and keep causal resource references separate. Scope MDC with `finally`/`AutoCloseable` cleanup. A correlation/operation ID is not actor identity.
+
+Structured logs use fixed application-owned `component`, `operation`, `result`, and error categories plus only necessary `*Ref` internal context and named aggregate counts. Never log customer/provider object identifiers, URIs/query strings, bodies, cursors, credentials/signatures, deduplication inputs, names, or business/property values. Normalize provider errors to a bounded owned enum. Known operational failures do not need stacks; unexpected failures use `SafeDiagnosticException`, never a raw throwable whose message/cause may be unsafe.
+
+Operation metrics use `application.operation.duration` and only bounded `component`, `operation`, `outcome`, and `error_code` tags. Never tag identifiers or provider-controlled values. Retain non-sensitive diagnostic context, retry only classified retryable failures, design idempotent event/job processing, and expose terminal failures.
+
+Control-plane state changes that have an activity action must append through the Platform activity port in the same transaction. Record only committed transitions, use truthful actor types, and do not use technical logging or Product Module semantic audit as a substitute. Append-only application semantics do not imply WORM storage.
 
 ## Persistence and migrations
 

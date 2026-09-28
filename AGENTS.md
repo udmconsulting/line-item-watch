@@ -7,7 +7,7 @@ This is the canonical execution contract for coding agents in this repository. F
 - `LINE_ITEM_WATCH` is the only defined Product Module.
 - HubSpot is the first external provider; it is not the business domain.
 - The accepted feasibility spike is under `spike/`; do not repeat destructive/live tests without explicit authorization.
-- The backend under `backend/` implements Tenant and Platform Connection identity/lifecycle, Product Module entitlements, PostgreSQL persistence, HubSpot OAuth install/callback, encrypted refresh credentials, on-demand refresh, internal uninstall, explicit one-Deal `LINE_ITEM_WATCH` baseline synchronization, authenticated/deduplicated durable HubSpot Line Item change-signal capture, and provider-free asynchronous signal reconstruction into semantic audit history and derived latest state. Customer administration/disconnect APIs, UI, reconciliation, and production operations remain unimplemented.
+- The backend under `backend/` implements Tenant and Platform Connection identity/lifecycle, Product Module entitlements, PostgreSQL persistence, HubSpot OAuth install/callback, encrypted refresh credentials, on-demand refresh, internal uninstall, explicit one-Deal `LINE_ITEM_WATCH` baseline synchronization, authenticated/deduplicated durable HubSpot Line Item change-signal capture, provider-free asynchronous signal reconstruction into semantic audit history and derived latest state, a signed Deal audit read API, shared supportability, and atomic connection/entitlement activity auditing. Customer administration/disconnect APIs, UI/translations, reconciliation, and production infrastructure/operations remain unimplemented.
 - Read [product overview](docs/business/product-overview.md), [Beta scope](docs/business/beta-v1.md), [architecture overview](docs/architecture/system-overview.md), and the relevant development/trust documents before implementation.
 
 ## Before implementation
@@ -55,6 +55,7 @@ Every task must:
 - Do not silently swallow failures. Separate domain outcomes from technical failures, retry only retryable failures, preserve idempotency, and expose terminal failures.
 - Add meaningful tests at the smallest appropriate level. Include tenant isolation, retries/idempotency, provider/persistence boundaries, and security-sensitive behavior when relevant.
 - Add structured, privacy-aware observability and operator alerts for operationally significant behavior.
+- Use the shared server-owned correlation, safe diagnostic, bounded error/metric, and Platform activity-audit foundations from ADR 0009. Correlation/operation identifiers are diagnostic metadata, not actor identity. Technical logs, Product Module semantic audit, and Platform activity audit remain separate.
 
 ### Local and production secrets
 

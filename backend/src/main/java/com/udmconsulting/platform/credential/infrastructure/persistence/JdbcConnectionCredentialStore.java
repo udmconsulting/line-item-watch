@@ -1,6 +1,11 @@
 package com.udmconsulting.platform.credential.infrastructure.persistence;
 
+import com.udmconsulting.platform.activity.application.ActivityContext;
+import com.udmconsulting.platform.activity.application.ApplicationActivityAudit;
+import com.udmconsulting.platform.activity.domain.ActivityAction;
+import com.udmconsulting.platform.activity.domain.ActivityResourceType;
 import com.udmconsulting.platform.connection.domain.PlatformConnectionId;
+import com.udmconsulting.platform.connection.domain.ConnectionStatus;
 import com.udmconsulting.platform.credential.application.ConnectionCredentialStore;
 import com.udmconsulting.platform.credential.domain.ConnectionCredential;
 import com.udmconsulting.platform.credential.domain.EncryptedSecret;
@@ -10,6 +15,7 @@ import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,9 +24,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class JdbcConnectionCredentialStore implements ConnectionCredentialStore {
 
     private final JdbcTemplate jdbcTemplate;
+    private final ApplicationActivityAudit activityAudit;
 
-    public JdbcConnectionCredentialStore(JdbcTemplate jdbcTemplate) {
+    public JdbcConnectionCredentialStore(
+            JdbcTemplate jdbcTemplate, ApplicationActivityAudit activityAudit) {
         this.jdbcTemplate = jdbcTemplate;
+        this.activityAudit = activityAudit;
     }
 
     @Override
@@ -88,32 +97,71 @@ public class JdbcConnectionCredentialStore implements ConnectionCredentialStore 
     @Override
     @Transactional
     public boolean requireReauthenticationIfGeneration(
-            PlatformConnectionId connectionId, long expectedGeneration) {
-        return destructiveTransition(connectionId, expectedGeneration, "REAUTH_REQUIRED");
+            PlatformConnectionId connectionId,
+            long expectedGeneration,
+            ActivityContext activityContext) {
+        return destructiveTransition(
+                connectionId,
+                expectedGeneration,
+                ConnectionStatus.REAUTH_REQUIRED,
+                ActivityAction.PLATFORM_CONNECTION_REAUTHENTICATION_REQUIRED,
+                activityContext);
     }
 
     @Override
     @Transactional
-    public boolean disconnectIfGeneration(PlatformConnectionId connectionId, long expectedGeneration) {
-        return destructiveTransition(connectionId, expectedGeneration, "DISCONNECTED");
+    public boolean disconnectIfGeneration(
+            PlatformConnectionId connectionId,
+            long expectedGeneration,
+            ActivityContext activityContext) {
+        return destructiveTransition(
+                connectionId,
+                expectedGeneration,
+                ConnectionStatus.DISCONNECTED,
+                ActivityAction.PLATFORM_CONNECTION_DISCONNECTED,
+                activityContext);
     }
 
     private boolean destructiveTransition(
-            PlatformConnectionId connectionId, long expectedGeneration, String status) {
+            PlatformConnectionId connectionId,
+            long expectedGeneration,
+            ConnectionStatus resultingStatus,
+            ActivityAction action,
+            ActivityContext activityContext) {
+        LifecycleState current = jdbcTemplate.query("""
+                        SELECT tenant_id, status, credential_generation
+                        FROM platform_connection
+                        WHERE id = ?
+                        FOR UPDATE
+                        """,
+                resultSet -> resultSet.next()
+                        ? new LifecycleState(
+                                resultSet.getObject("tenant_id", UUID.class),
+                                ConnectionStatus.valueOf(resultSet.getString("status")),
+                                resultSet.getLong("credential_generation"))
+                        : null,
+                connectionId.value());
+        if (current == null
+                || current.credentialGeneration() != expectedGeneration
+                || current.status() == resultingStatus) {
+            return false;
+        }
+        Integer credentials = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM connection_credential
+                WHERE connection_id = ? AND credential_generation = ?
+                """, Integer.class, connectionId.value(), expectedGeneration);
+        if (credentials == null || credentials != 1) {
+            return false;
+        }
         int advanced = jdbcTemplate.update("""
-                UPDATE platform_connection p
+                UPDATE platform_connection
                 SET credential_generation = credential_generation + 1,
                     status = ?,
                     status_changed_at = CURRENT_TIMESTAMP
-                WHERE p.id = ?
-                  AND p.credential_generation = ?
-                  AND EXISTS (
-                      SELECT 1 FROM connection_credential c
-                      WHERE c.connection_id = p.id
-                        AND c.credential_generation = ?
-                  )
-                """, status, connectionId.value(), expectedGeneration, expectedGeneration);
-        if (advanced == 0) {
+                WHERE id = ? AND credential_generation = ?
+                """, resultingStatus.name(), connectionId.value(), expectedGeneration);
+        if (advanced != 1) {
             return false;
         }
         int deleted = jdbcTemplate.update("""
@@ -123,6 +171,15 @@ public class JdbcConnectionCredentialStore implements ConnectionCredentialStore 
         if (deleted != 1) {
             throw new IllegalStateException("Credential generation changed during lifecycle transition");
         }
+        activityAudit.record(
+                new com.udmconsulting.platform.tenant.domain.TenantId(current.tenantId()),
+                connectionId,
+                activityContext,
+                action,
+                ActivityResourceType.PLATFORM_CONNECTION,
+                connectionId.value().toString(),
+                current.status().name(),
+                resultingStatus.name());
         return true;
     }
 
@@ -142,5 +199,9 @@ public class JdbcConnectionCredentialStore implements ConnectionCredentialStore 
                         RETURNING credential_generation
                         """, resultSet -> resultSet.next() ? resultSet.getLong(1) : null,
                 connectionId.value(), expectedGeneration, expectedGeneration);
+    }
+
+    private record LifecycleState(
+            UUID tenantId, ConnectionStatus status, long credentialGeneration) {
     }
 }

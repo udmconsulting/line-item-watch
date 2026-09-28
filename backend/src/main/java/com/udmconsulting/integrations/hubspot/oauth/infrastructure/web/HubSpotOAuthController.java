@@ -3,6 +3,9 @@ package com.udmconsulting.integrations.hubspot.oauth.infrastructure.web;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotInstallationUseCase;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotAuthorizationException;
 import com.udmconsulting.integrations.hubspot.oauth.application.OAuthStateException;
+import com.udmconsulting.platform.supportability.ApplicationOperation;
+import com.udmconsulting.platform.supportability.RequestSupportability;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,7 +29,8 @@ public final class HubSpotOAuthController {
     }
 
     @GetMapping("/install")
-    public ResponseEntity<Void> install() {
+    public ResponseEntity<Void> install(HttpServletRequest request) {
+        RequestSupportability.operation(request, ApplicationOperation.HUBSPOT_OAUTH_INSTALL);
         HubSpotInstallationUseCase.InstallationStart start = installationService.beginInstallation();
         return OAuthHttpResponses.secured(ResponseEntity.status(302))
                 .location(start.authorizationUri())
@@ -37,7 +41,9 @@ public final class HubSpotOAuthController {
     public ResponseEntity<String> callback(
             @RequestParam(required = false) String code,
             @RequestParam(required = false) String state,
-            @RequestParam(required = false) String error) {
+            @RequestParam(required = false) String error,
+            HttpServletRequest request) {
+        RequestSupportability.operation(request, ApplicationOperation.HUBSPOT_OAUTH_CALLBACK);
         validateState(state);
         boolean hasCode = code != null;
         boolean hasError = error != null;

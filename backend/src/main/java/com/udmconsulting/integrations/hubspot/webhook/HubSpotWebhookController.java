@@ -1,10 +1,13 @@
 package com.udmconsulting.integrations.hubspot.webhook;
 
 import com.udmconsulting.integrations.hubspot.config.HubSpotWebhookProperties;
+import com.udmconsulting.platform.supportability.ApplicationOperation;
+import com.udmconsulting.platform.supportability.OperationalErrorCode;
+import com.udmconsulting.platform.supportability.RequestSupportability;
+import com.udmconsulting.platform.supportability.SafeDiagnosticException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.util.Locale;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -33,17 +36,21 @@ final class HubSpotWebhookController {
 
     @RequestMapping(HubSpotWebhookProperties.ENDPOINT_PATH)
     ResponseEntity<Void> receive(HttpServletRequest request) {
-        UUID correlationId = UUID.randomUUID();
+        RequestSupportability.operation(request, ApplicationOperation.HUBSPOT_WEBHOOK_INGEST);
         if (!"POST".equals(request.getMethod())) {
+            RequestSupportability.error(request, OperationalErrorCode.INVALID_REQUEST);
             return empty(HttpStatus.METHOD_NOT_ALLOWED);
         }
         if (!isJson(request.getContentType())) {
+            RequestSupportability.error(request, OperationalErrorCode.INVALID_REQUEST);
             return empty(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
         }
         if (!isSupportedContentEncoding(request.getHeader(HttpHeaders.CONTENT_ENCODING))) {
+            RequestSupportability.error(request, OperationalErrorCode.INVALID_REQUEST);
             return empty(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
         }
         if (request.getContentLengthLong() > HubSpotWebhookProperties.MAX_BODY_BYTES) {
+            RequestSupportability.error(request, OperationalErrorCode.INVALID_REQUEST);
             return empty(HttpStatus.PAYLOAD_TOO_LARGE);
         }
 
@@ -52,12 +59,12 @@ final class HubSpotWebhookController {
             rawBody = request.getInputStream()
                     .readNBytes(HubSpotWebhookProperties.MAX_BODY_BYTES + 1);
         } catch (IOException exception) {
-            LOGGER.warn(
-                    "HubSpot webhook request failed correlationId={} category=BODY_READ_FAILED",
-                    correlationId);
+            RequestSupportability.error(request, OperationalErrorCode.REQUEST_BODY_READ_FAILED);
+            logKnown("FAILED", OperationalErrorCode.REQUEST_BODY_READ_FAILED);
             return empty(HttpStatus.SERVICE_UNAVAILABLE);
         }
         if (rawBody.length > HubSpotWebhookProperties.MAX_BODY_BYTES) {
+            RequestSupportability.error(request, OperationalErrorCode.INVALID_REQUEST);
             return empty(HttpStatus.PAYLOAD_TOO_LARGE);
         }
 
@@ -69,26 +76,26 @@ final class HubSpotWebhookController {
                     rawBody);
             return empty(HttpStatus.NO_CONTENT);
         } catch (HubSpotWebhookAuthenticationException exception) {
-            LOGGER.warn(
-                    "HubSpot webhook request rejected correlationId={} category=AUTHENTICATION_FAILED",
-                    correlationId);
+            RequestSupportability.error(request, OperationalErrorCode.AUTHENTICATION_FAILED);
+            logKnown("REJECTED", OperationalErrorCode.AUTHENTICATION_FAILED);
             return empty(HttpStatus.UNAUTHORIZED);
         } catch (HubSpotWebhookPayloadException exception) {
-            LOGGER.warn(
-                    "HubSpot webhook request rejected correlationId={} category=PAYLOAD_INVALID",
-                    correlationId);
+            RequestSupportability.error(request, OperationalErrorCode.WEBHOOK_PAYLOAD_INVALID);
+            logKnown("REJECTED", OperationalErrorCode.WEBHOOK_PAYLOAD_INVALID);
             return empty(HttpStatus.BAD_REQUEST);
         } catch (DataAccessException exception) {
-            LOGGER.error(
-                    "HubSpot webhook request failed correlationId={} category=DATABASE_UNAVAILABLE exceptionType={}",
-                    correlationId,
-                    exception.getClass().getName());
+            RequestSupportability.error(request, OperationalErrorCode.DATABASE_UNAVAILABLE);
+            logKnown("FAILED", OperationalErrorCode.DATABASE_UNAVAILABLE);
             return empty(HttpStatus.SERVICE_UNAVAILABLE);
         } catch (RuntimeException exception) {
-            LOGGER.error(
-                    "HubSpot webhook request failed correlationId={} category=INTERNAL_FAILURE exceptionType={}",
-                    correlationId,
-                    exception.getClass().getName());
+            RequestSupportability.error(request, OperationalErrorCode.INTERNAL_ERROR);
+            LOGGER.atError()
+                    .addKeyValue("component", "hubspot_webhook")
+                    .addKeyValue("operation", "webhook_ingest")
+                    .addKeyValue("result", "FAILED")
+                    .addKeyValue("errorCode", OperationalErrorCode.INTERNAL_ERROR.name())
+                    .setCause(SafeDiagnosticException.from(exception))
+                    .log("HubSpot webhook request failed unexpectedly");
             return empty(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
@@ -114,5 +121,14 @@ final class HubSpotWebhookController {
 
     private static ResponseEntity<Void> empty(HttpStatus status) {
         return ResponseEntity.status(status).build();
+    }
+
+    private static void logKnown(String result, OperationalErrorCode errorCode) {
+        LOGGER.atWarn()
+                .addKeyValue("component", "hubspot_webhook")
+                .addKeyValue("operation", "webhook_ingest")
+                .addKeyValue("result", result)
+                .addKeyValue("errorCode", errorCode.name())
+                .log("HubSpot webhook request was not accepted");
     }
 }

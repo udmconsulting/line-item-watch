@@ -2,7 +2,7 @@
 
 ## Status legend
 
-- **Exists today:** HubSpot app project metadata, accepted feasibility probes, the Java/PostgreSQL Platform Core, HubSpot OAuth installation/credential lifecycle, the one-Deal `LINE_ITEM_WATCH` checkpoint slice, authenticated durable HubSpot Line Item webhook capture, provider-free signal/audit projection, and a disabled-by-default signed Deal audit read API under `backend/`.
+- **Exists today:** HubSpot app project metadata, accepted feasibility probes, the Java/PostgreSQL Platform Core, HubSpot OAuth installation/credential lifecycle, the one-Deal `LINE_ITEM_WATCH` checkpoint slice, authenticated durable HubSpot Line Item webhook capture, provider-free signal/audit projection, a disabled-by-default signed Deal audit read API, shared supportability, and Platform activity auditing under `backend/`.
 - **Target Beta:** required architecture direction; not yet implemented.
 - **TBD:** an implementation decision intentionally deferred until the relevant feature or infrastructure task.
 
@@ -25,7 +25,7 @@ Platform / application boundaries
   explicit baseline use case              [implemented]
   authenticated durable signal ingress    [implemented]
   signal workers/durable processing jobs  [implemented; opt-in]
-  security | configuration | observability
+  security | configuration | supportability | activity audit
         |
         v
 Product Modules
@@ -47,7 +47,7 @@ The arrows show dependency flow into application-owned contracts and business be
 
 The target is one codebase and a modular monolith with explicit internal ownership. The same artifact may support logically separate API and background-worker roles so asynchronous work is not forced into request threads and each role can scale independently later. Physical separation is not a Beta default.
 
-PostgreSQL 18 is the implemented initial database, with Liquibase-managed schema, persistence adapters, and the durable processing queue. The application runs as an HTTP service and may also run its scheduled worker in the same process when explicitly enabled. Production endpoints require HTTPS. Managed infrastructure, backups, restore verification, managed secret/key storage, deployment topology, hosting provider, database provider, and region are TBD.
+PostgreSQL 18 is the implemented initial database, with Liquibase-managed schema, persistence adapters, the durable processing queue, and a Platform-owned application activity audit. The application runs as an HTTP service and may also run its scheduled worker in the same process when explicitly enabled. Shared supportability supplies server-owned request correlation, worker operation identity, stable public/internal error categories, privacy-aware structured logs, safe unexpected-failure diagnostics, and bounded vendor-neutral operation timers. Production endpoints require HTTPS. Managed infrastructure, backups, restore verification, managed secret/key storage, deployment topology, hosting provider, database provider, telemetry vendor, and region are TBD.
 
 ## Core request/event context
 
@@ -65,6 +65,6 @@ Customer ownership is never inferred from an external business-object ID. Provid
 
 ## Current implementation boundary
 
-The single Spring Boot application under `backend/` implements Tenant identity, Platform Connections with `ACTIVE`, `REAUTH_REQUIRED`, and `DISCONNECTED` lifecycle states, Product Module identity, entitlements, encrypted connection credentials, OAuth state, HubSpot install/callback, on-demand refresh, service-only uninstall, one explicitly invoked Deal observation synchronization, a conditional authenticated HubSpot webhook receiver, and an independently conditional signal worker. HubSpot code is isolated under `integrations.hubspot`; shared credential lifecycle remains in Platform Core. `modules.lineitemwatch` owns normalized complete checkpoints, immutable signals, pure reconstruction, semantic audits, and atomic PostgreSQL projection writes.
+The single Spring Boot application under `backend/` implements Tenant identity, Platform Connections with `ACTIVE`, `REAUTH_REQUIRED`, and `DISCONNECTED` lifecycle states, Product Module identity, entitlements, encrypted connection credentials, OAuth state, HubSpot install/callback, on-demand refresh, service-only uninstall, one explicitly invoked Deal observation synchronization, a conditional authenticated HubSpot webhook receiver, an independently conditional signal worker, shared supportability, and committed connection/entitlement activity auditing. HubSpot code is isolated under `integrations.hubspot`; shared credential lifecycle and activity audit remain in Platform Core. `modules.lineitemwatch` owns normalized complete checkpoints, immutable signals, pure reconstruction, semantic audits, and atomic PostgreSQL projection writes. Technical logs, Platform activity rows, and Product Module semantic audit events are distinct records.
 
 `BASELINE` is the immutable first complete provider observation. `OBSERVED` is the replaceable latest complete provider checkpoint. `LATEST` is a sparse derived projection and has one writer: the shared reconstruction repository used after both P.3 observation and P.5 signal processing. Signal processing and Deal audit reads perform no provider reads. The audit endpoint resolves only a cryptographically authenticated provider account into Tenant/connection scope; its Deal ID remains an untrusted selector within that scope. No public baseline/recovery endpoint, account-wide scan, recurring reconciliation, access-token cache, refresh coalescing, public disconnect API, Line Item Watch UI, physical API/worker split, production deployment, or production observability vendor integration exists yet. Controlled P.4 genuine-delivery acceptance is complete; production target details are intentionally not represented in repository configuration.

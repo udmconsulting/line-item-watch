@@ -1,13 +1,16 @@
 package com.udmconsulting.platform.entitlement.application;
 
+import com.udmconsulting.platform.activity.application.ActivityContext;
 import com.udmconsulting.platform.module.domain.ProductModule;
 import com.udmconsulting.platform.tenant.domain.TenantId;
 
 public interface EntitlementStore {
 
-    void enable(TenantId tenantId, ProductModule productModule);
+    boolean enable(
+            TenantId tenantId, ProductModule productModule, ActivityContext activityContext);
 
-    void disable(TenantId tenantId, ProductModule productModule);
+    boolean disable(
+            TenantId tenantId, ProductModule productModule, ActivityContext activityContext);
 
     boolean isEnabled(TenantId tenantId, ProductModule productModule);
 

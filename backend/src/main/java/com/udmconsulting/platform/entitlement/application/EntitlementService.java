@@ -1,8 +1,12 @@
 package com.udmconsulting.platform.entitlement.application;
 
+import com.udmconsulting.platform.activity.application.ActivityContext;
+import com.udmconsulting.platform.activity.domain.ActivityActor;
+import com.udmconsulting.platform.activity.domain.ActivityActorSource;
 import com.udmconsulting.platform.entitlement.domain.TenantEntitlement;
 import com.udmconsulting.platform.module.domain.ProductModule;
 import com.udmconsulting.platform.tenant.domain.TenantId;
+import com.udmconsulting.platform.supportability.DiagnosticContext;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
 
@@ -17,13 +21,29 @@ public final class EntitlementService {
     }
 
     public void enable(TenantId tenantId, ProductModule productModule) {
+        enable(tenantId, productModule, unattributedContext());
+    }
+
+    public boolean enable(
+            TenantId tenantId,
+            ProductModule productModule,
+            ActivityContext activityContext) {
         TenantEntitlement entitlement = entitlement(tenantId, productModule);
-        entitlementStore.enable(entitlement.tenantId(), entitlement.productModule());
+        return entitlementStore.enable(
+                entitlement.tenantId(), entitlement.productModule(), activityContext);
     }
 
     public void disable(TenantId tenantId, ProductModule productModule) {
+        disable(tenantId, productModule, unattributedContext());
+    }
+
+    public boolean disable(
+            TenantId tenantId,
+            ProductModule productModule,
+            ActivityContext activityContext) {
         TenantEntitlement entitlement = entitlement(tenantId, productModule);
-        entitlementStore.disable(entitlement.tenantId(), entitlement.productModule());
+        return entitlementStore.disable(
+                entitlement.tenantId(), entitlement.productModule(), activityContext);
     }
 
     public boolean isEnabled(TenantId tenantId, ProductModule productModule) {
@@ -40,5 +60,11 @@ public final class EntitlementService {
     private static TenantEntitlement entitlement(
             TenantId tenantId, ProductModule productModule) {
         return new TenantEntitlement(tenantId, productModule);
+    }
+
+    private static ActivityContext unattributedContext() {
+        return new ActivityContext(
+                ActivityActor.unattributed(ActivityActorSource.APPLICATION),
+                DiagnosticContext.currentDiagnosticIdOrNew());
     }
 }

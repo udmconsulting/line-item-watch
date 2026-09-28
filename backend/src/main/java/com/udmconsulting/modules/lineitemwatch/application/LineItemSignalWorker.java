@@ -1,8 +1,15 @@
 package com.udmconsulting.modules.lineitemwatch.application;
 
+import com.udmconsulting.platform.supportability.ApplicationOperation;
+import com.udmconsulting.platform.supportability.ApplicationOperationMetrics;
+import com.udmconsulting.platform.supportability.DiagnosticContext;
+import com.udmconsulting.platform.supportability.OperationOutcome;
+import com.udmconsulting.platform.supportability.OperationalErrorCode;
+import com.udmconsulting.platform.supportability.SafeDiagnosticException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -23,16 +30,19 @@ public final class LineItemSignalWorker {
     private final LineItemSignalProcessingStore store;
     private final LineItemProcessingProperties properties;
     private final LineItemProcessingMetrics metrics;
+    private final ApplicationOperationMetrics operationMetrics;
     private final Clock clock;
 
     public LineItemSignalWorker(
             LineItemSignalProcessingStore store,
             LineItemProcessingProperties properties,
             LineItemProcessingMetrics metrics,
+            ApplicationOperationMetrics operationMetrics,
             Clock clock) {
         this.store = Objects.requireNonNull(store);
         this.properties = Objects.requireNonNull(properties);
         this.metrics = Objects.requireNonNull(metrics);
+        this.operationMetrics = Objects.requireNonNull(operationMetrics);
         this.clock = Objects.requireNonNull(clock);
     }
 
@@ -51,49 +61,65 @@ public final class LineItemSignalWorker {
     }
 
     private void process(ClaimedLineItemSignal claim) {
-        metrics.claimed(claim.reclaimed());
-        try {
-            Instant completedAt = clock.instant();
-            LineItemSignalProcessingStore.ProcessingResult result =
-                    store.process(claim, completedAt);
-            metrics.processed(claim.receivedAt(), completedAt);
-            LOGGER.info(
-                    "Line Item signal processed tenantId={} connectionId={} signalId={} "
-                            + "attempt={} auditEvents={} deleted={} sparse={}",
-                    claim.tenantId(),
-                    claim.connectionId(),
-                    claim.signalId(),
-                    claim.attempt(),
-                    result.auditEvents(),
-                    result.deleted(),
-                    result.sparse());
-        } catch (RuntimeException exception) {
-            Failure failure = classify(exception);
-            Instant failedAt = clock.instant();
-            var recorded = store.recordFailure(
-                    claim,
-                    failure.errorCode(),
-                    failure.retryable(),
-                    failedAt,
-                    properties.retryDelay(claim.attempt()),
-                    properties.maxAttempts());
-            if (recorded.recorded()) {
-                if (recorded.terminal()) {
-                    metrics.failed();
-                } else {
-                    metrics.retried();
+        UUID operationId = UUID.randomUUID();
+        try (DiagnosticContext.Scope ignored = DiagnosticContext.withOperationId(operationId)) {
+            ApplicationOperationMetrics.Sample operation =
+                    operationMetrics.start(ApplicationOperation.LINE_ITEM_SIGNAL_PROCESS);
+            metrics.claimed(claim.reclaimed());
+            try {
+                Instant completedAt = clock.instant();
+                LineItemSignalProcessingStore.ProcessingResult result =
+                        store.process(claim, completedAt);
+                metrics.processed(claim.receivedAt(), completedAt);
+                operation.stop(OperationOutcome.SUCCESS, OperationalErrorCode.NONE);
+                LOGGER.atInfo()
+                        .addKeyValue("component", "line_item_watch")
+                        .addKeyValue("operation", "signal_process")
+                        .addKeyValue("result", "SUCCESS")
+                        .addKeyValue("tenantRef", claim.tenantId().value())
+                        .addKeyValue("connectionRef", claim.connectionId().value())
+                        .addKeyValue("signalRef", claim.signalId())
+                        .addKeyValue("attempt", claim.attempt())
+                        .addKeyValue("auditEventCount", result.auditEvents())
+                        .addKeyValue("deleted", result.deleted())
+                        .addKeyValue("sparse", result.sparse())
+                        .log("Line Item signal processed");
+            } catch (RuntimeException exception) {
+                Failure failure = classify(exception);
+                Instant failedAt = clock.instant();
+                var recorded = store.recordFailure(
+                        claim,
+                        failure.errorCode(),
+                        failure.retryable(),
+                        failedAt,
+                        properties.retryDelay(claim.attempt()),
+                        properties.maxAttempts());
+                if (recorded.recorded()) {
+                    if (recorded.terminal()) {
+                        metrics.failed();
+                    } else {
+                        metrics.retried();
+                    }
                 }
+                OperationalErrorCode operationalCode = operationalCode(failure.errorCode());
+                operation.stop(
+                        recorded.terminal() ? OperationOutcome.FAILED : OperationOutcome.RETRY,
+                        operationalCode);
+                var event = (operationalCode == OperationalErrorCode.INTERNAL_PROCESSING
+                                ? LOGGER.atError() : LOGGER.atWarn())
+                        .addKeyValue("component", "line_item_watch")
+                        .addKeyValue("operation", "signal_process")
+                        .addKeyValue("result", recorded.terminal() ? "FAILED" : "RETRY")
+                        .addKeyValue("errorCode", failure.errorCode())
+                        .addKeyValue("tenantRef", claim.tenantId().value())
+                        .addKeyValue("connectionRef", claim.connectionId().value())
+                        .addKeyValue("signalRef", claim.signalId())
+                        .addKeyValue("attempt", claim.attempt());
+                if (operationalCode == OperationalErrorCode.INTERNAL_PROCESSING) {
+                    event.setCause(SafeDiagnosticException.from(exception));
+                }
+                event.log("Line Item signal processing failed");
             }
-            LOGGER.warn(
-                    "Line Item signal processing failed tenantId={} connectionId={} signalId={} "
-                            + "attempt={} errorCode={} terminal={} exceptionType={}",
-                    claim.tenantId(),
-                    claim.connectionId(),
-                    claim.signalId(),
-                    claim.attempt(),
-                    failure.errorCode(),
-                    recorded.terminal(),
-                    exception.getClass().getSimpleName());
         }
     }
 
@@ -106,6 +132,14 @@ public final class LineItemSignalWorker {
             return new Failure("TRANSIENT_DATABASE", true);
         }
         return new Failure("INTERNAL_PROCESSING", true);
+    }
+
+    private static OperationalErrorCode operationalCode(String errorCode) {
+        try {
+            return OperationalErrorCode.valueOf(errorCode);
+        } catch (IllegalArgumentException exception) {
+            return OperationalErrorCode.INTERNAL_PROCESSING;
+        }
     }
 
     private record Failure(String errorCode, boolean retryable) {
