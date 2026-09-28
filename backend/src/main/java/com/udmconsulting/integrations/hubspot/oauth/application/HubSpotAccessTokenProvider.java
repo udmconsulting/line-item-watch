@@ -6,6 +6,7 @@ import com.udmconsulting.platform.connection.domain.PlatformConnectionId;
 import com.udmconsulting.platform.credential.application.ConnectionCredentialService;
 import com.udmconsulting.platform.credential.application.ConnectionCredentialService.LoadedCredential;
 import com.udmconsulting.platform.credential.application.ReauthenticationRequiredException;
+import com.udmconsulting.platform.supportability.OperationalErrorCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -72,8 +73,25 @@ public final class HubSpotAccessTokenProvider {
 
     private static void logFailure(
             PlatformConnectionId connectionId, HubSpotOAuthFailureCategory category) {
-        LOGGER.warn("HubSpot access-token operation failed connectionId={} category={}",
-                connectionId.value(), category);
+        LOGGER.atWarn()
+                .addKeyValue("component", "hubspot_oauth")
+                .addKeyValue("operation", "access_token")
+                .addKeyValue("result", "FAILED")
+                .addKeyValue("errorCode", operationalError(category).name())
+                .addKeyValue("providerErrorCode", category.name())
+                .addKeyValue("connectionRef", connectionId.value())
+                .log("HubSpot access-token operation failed");
+    }
+
+    private static OperationalErrorCode operationalError(HubSpotOAuthFailureCategory category) {
+        return switch (category) {
+            case TOKEN_EXCHANGE_PROVIDER_UNAVAILABLE, TOKEN_INTROSPECTION_PROVIDER_UNAVAILABLE ->
+                    OperationalErrorCode.PROVIDER_UNAVAILABLE;
+            case TOKEN_EXCHANGE_REJECTED, TOKEN_INTROSPECTION_REJECTED,
+                    ACCOUNT_IDENTITY_MISMATCH, REQUIRED_SCOPE_MISSING ->
+                    OperationalErrorCode.PROVIDER_AUTH_REQUIRED;
+            default -> OperationalErrorCode.INTERNAL_ERROR;
+        };
     }
 
     public record TransientAccessGrant(

@@ -67,13 +67,15 @@ class HubSpotDealAuditReadService {
                 input.lineItemsCursor(),
                 input.eventsLimit(),
                 input.eventsCursor()));
-        LOGGER.info(
-                "Deal audit read completed correlationId={} tenantId={} connectionId={} lineItemCount={} eventCount={}",
-                correlationId,
-                connection.tenantId().value(),
-                connection.id().value(),
-                result.lineItems().items().size(),
-                result.events().items().size());
+        LOGGER.atInfo()
+                .addKeyValue("component", "line_item_watch")
+                .addKeyValue("operation", "deal_audit_read")
+                .addKeyValue("result", "SUCCESS")
+                .addKeyValue("tenantRef", connection.tenantId().value())
+                .addKeyValue("connectionRef", connection.id().value())
+                .addKeyValue("lineItemCount", result.lineItems().items().size())
+                .addKeyValue("eventCount", result.events().items().size())
+                .log("Deal audit read completed");
         return result;
     }
 }

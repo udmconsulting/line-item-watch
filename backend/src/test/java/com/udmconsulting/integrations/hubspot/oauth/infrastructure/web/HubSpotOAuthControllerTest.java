@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotInstallationUseCase;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotTokenMetadataException;
 import com.udmconsulting.integrations.hubspot.oauth.application.OAuthStateException;
+import com.udmconsulting.platform.supportability.CorrelationFilter;
 import java.net.URI;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +31,7 @@ class HubSpotOAuthControllerTest {
         service = new StubInstallationUseCase();
         mvc = MockMvcBuilders.standaloneSetup(new HubSpotOAuthController(service))
                 .setControllerAdvice(new OAuthErrorHandler())
-                .addFilters(new OAuthResponseSecurityHeaderFilter())
+                .addFilters(new CorrelationFilter(), new OAuthResponseSecurityHeaderFilter())
                 .build();
     }
 
@@ -159,7 +160,8 @@ class HubSpotOAuthControllerTest {
     }
 
     private static void assertSecure(ResultActions result) throws Exception {
-        result.andExpect(header().string("Cache-Control", "no-store"))
+        result.andExpect(header().exists(CorrelationFilter.HEADER))
+                .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(header().string("Pragma", "no-cache"))
                 .andExpect(header().string("Referrer-Policy", "no-referrer"))
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"))

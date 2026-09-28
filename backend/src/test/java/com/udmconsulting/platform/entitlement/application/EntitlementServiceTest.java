@@ -3,6 +3,7 @@ package com.udmconsulting.platform.entitlement.application;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.udmconsulting.platform.module.domain.ProductModule;
+import com.udmconsulting.platform.activity.application.ActivityContext;
 import com.udmconsulting.platform.tenant.domain.TenantId;
 import java.util.HashSet;
 import java.util.Set;
@@ -35,13 +36,19 @@ class EntitlementServiceTest {
         private final Set<Key> entitlements = new HashSet<>();
 
         @Override
-        public void enable(TenantId tenantId, ProductModule productModule) {
-            entitlements.add(new Key(tenantId, productModule));
+        public boolean enable(
+                TenantId tenantId,
+                ProductModule productModule,
+                ActivityContext activityContext) {
+            return entitlements.add(new Key(tenantId, productModule));
         }
 
         @Override
-        public void disable(TenantId tenantId, ProductModule productModule) {
-            entitlements.remove(new Key(tenantId, productModule));
+        public boolean disable(
+                TenantId tenantId,
+                ProductModule productModule,
+                ActivityContext activityContext) {
+            return entitlements.remove(new Key(tenantId, productModule));
         }
 
         @Override

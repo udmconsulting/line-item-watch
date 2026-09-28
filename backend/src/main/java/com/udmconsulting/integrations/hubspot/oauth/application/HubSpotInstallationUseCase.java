@@ -13,11 +13,12 @@ public interface HubSpotInstallationUseCase {
 
     void rejectInstallation(String state);
 
-    record InstallationStart(URI authorizationUri, UUID correlationId) {
+    record InstallationStart(URI authorizationUri, UUID oauthOperationId) {
 
         @Override
         public String toString() {
-            return "InstallationStart[authorizationUri=<redacted>, correlationId=" + correlationId + "]";
+            return "InstallationStart[authorizationUri=<redacted>, oauthOperationId="
+                    + oauthOperationId + "]";
         }
     }
 

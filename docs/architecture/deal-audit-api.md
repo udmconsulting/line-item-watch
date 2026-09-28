@@ -110,6 +110,10 @@ Errors are localization-neutral:
 | 500 | `INTERNAL_ERROR` | Internal invariant or unexpected failure |
 | 503 | `SERVICE_UNAVAILABLE` | Database access failure |
 
-No response contains exception/provider/database detail or customer-facing English copy. P.7 owns localized title, description, retry guidance, and presentation. P.6.B will generalize production supportability, i18n foundations, and activity auditing.
+No response contains exception/provider/database detail or customer-facing English copy. P.7 owns localized title, description, retry guidance, and presentation. P.6.B supplies the shared production-supportability, localization-contract, and activity-audit foundations.
 
-Successful and error responses use `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`. The DTO excludes Tenant/connection/database IDs, processing rows, signal/source IDs, deduplication keys, OAuth data, raw payloads, and raw provider cleanup evidence.
+The code is a localization key input, not localized text. The backend localization contract maps every public code to an `errors.*` key while the future P.7 client owns visible message bundles. Every response also has a server-owned `X-Correlation-ID`; on errors it exactly equals the JSON value, and caller-supplied values cannot override it.
+
+P.7 locale resolution uses HubSpot `user.language` for message selection, `user.locale` for date/number formatting, and `portal.timezone` for time-zone display. Locale tags are trimmed, `_` is replaced with `-`, and BCP 47 canonicalization is followed by exact supported-locale, base-language, then `en` fallback. Missing/invalid time zones use UTC. Dates, numbers, decimal separators, and pluralization are locale-aware; currency formatting requires an explicit valid currency code. `UNKNOWN`, `ABSENT`, and `NOT_APPLICABLE` remain distinct semantic states.
+
+Successful and error responses use `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`. The DTO excludes Tenant/connection/database IDs, processing rows, signal/source IDs, deduplication keys, OAuth data, raw payloads, and raw provider cleanup evidence. No visible translation or UI copy is implemented in P.6.B.

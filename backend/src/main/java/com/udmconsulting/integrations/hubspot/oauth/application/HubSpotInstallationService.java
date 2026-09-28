@@ -1,10 +1,16 @@
 package com.udmconsulting.integrations.hubspot.oauth.application;
 
 import com.udmconsulting.integrations.hubspot.config.HubSpotOAuthProperties;
+import com.udmconsulting.platform.activity.application.ActivityContext;
+import com.udmconsulting.platform.activity.domain.ActivityActor;
+import com.udmconsulting.platform.activity.domain.ActivityActorSource;
 import com.udmconsulting.platform.connection.domain.Provider;
 import com.udmconsulting.platform.credential.application.SecretContext;
 import com.udmconsulting.platform.credential.application.SecretProtector;
 import com.udmconsulting.platform.credential.domain.ConnectionCredential;
+import com.udmconsulting.platform.supportability.DiagnosticContext;
+import com.udmconsulting.platform.supportability.OperationalErrorCode;
+import com.udmconsulting.platform.supportability.SafeDiagnosticException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Objects;
@@ -49,21 +55,21 @@ public final class HubSpotInstallationService implements HubSpotInstallationUseC
                 .build()
                 .encode()
                 .toUri();
-        return new InstallationStart(authorizationUri, state.correlationId());
+        return new InstallationStart(authorizationUri, state.oauthOperationId());
     }
 
     @Override
     public CompletedInstallation completeInstallation(String state, String authorizationCode) {
-        UUID correlationId = stateService.consume(state);
+        UUID oauthOperationId = stateService.consume(state);
         if (authorizationCode == null || authorizationCode.isBlank()) {
-            logFailure(correlationId, HubSpotOAuthFailureCategory.TOKEN_EXCHANGE_REJECTED);
+            logFailure(oauthOperationId, HubSpotOAuthFailureCategory.TOKEN_EXCHANGE_REJECTED);
             throw new HubSpotAuthorizationException();
         }
         HubSpotOAuthGateway.IssuedAuthorizationTokens issuedTokens;
         try {
             issuedTokens = oauthGateway.exchangeAuthorizationCode(authorizationCode);
         } catch (RuntimeException exception) {
-            logFailure(correlationId, failureCategory(
+            logFailure(oauthOperationId, failureCategory(
                     exception, HubSpotOAuthFailureCategory.TOKEN_EXCHANGE_REJECTED));
             throw exception;
         }
@@ -78,20 +84,24 @@ public final class HubSpotInstallationService implements HubSpotInstallationUseC
                     installationStore.finalizeInstallation(
                             metadata.externalAccountId(),
                             issuedTokens.refreshToken(),
-                            metadata.grantedScopes());
+                            metadata.grantedScopes(),
+                            new ActivityContext(
+                                    ActivityActor.unattributed(ActivityActorSource.HUBSPOT),
+                                    DiagnosticContext.currentDiagnosticIdOrNew()));
             finalized.supersededCredential().ifPresent(prior -> revokeSupersededBestEffort(
                     prior, issuedTokens.refreshToken(), finalized.connectionId()));
-            LOGGER.info(
-                    "HubSpot installation completed correlationId={} tenantId={} connectionId={} "
-                            + "externalAccountId={}",
-                    correlationId,
-                    finalized.tenantId().value(),
-                    finalized.connectionId().value(),
-                    metadata.externalAccountId());
+            LOGGER.atInfo()
+                    .addKeyValue("component", "hubspot_oauth")
+                    .addKeyValue("operation", "oauth_callback")
+                    .addKeyValue("result", "SUCCESS")
+                    .addKeyValue("operationId", oauthOperationId)
+                    .addKeyValue("tenantRef", finalized.tenantId().value())
+                    .addKeyValue("connectionRef", finalized.connectionId().value())
+                    .log("HubSpot installation completed");
             return new CompletedInstallation(finalized.tenantId(), finalized.connectionId());
         } catch (RuntimeException exception) {
-            revokeBestEffort(issuedTokens.refreshToken(), "new credential after post-issuance failure");
-            logFailure(correlationId, failureCategory(
+            revokeBestEffort(issuedTokens.refreshToken());
+            logFailure(oauthOperationId, failureCategory(
                     exception, HubSpotOAuthFailureCategory.LOCAL_FINALIZATION_FAILED));
             throw exception;
         }
@@ -113,19 +123,40 @@ public final class HubSpotInstallationService implements HubSpotInstallationUseC
             if (!MessageDigest.isEqual(
                     superseded.getBytes(StandardCharsets.UTF_8),
                     activeRefreshToken.getBytes(StandardCharsets.UTF_8))) {
-                revokeBestEffort(superseded, "superseded credential");
+                revokeBestEffort(superseded);
             }
         } catch (RuntimeException exception) {
-            LOGGER.warn("Could not process superseded HubSpot credential for best-effort revocation; "
-                    + "operator follow-up may be required");
+            LOGGER.atError()
+                    .addKeyValue("component", "hubspot_oauth")
+                    .addKeyValue("operation", "revoke_superseded_credential")
+                    .addKeyValue("result", "FAILED")
+                    .addKeyValue("errorCode", "INTERNAL_ERROR")
+                    .setCause(SafeDiagnosticException.from(exception))
+                    .log("Could not process superseded HubSpot credential; operator follow-up may be required");
         }
     }
 
-    private void revokeBestEffort(String refreshToken, String reason) {
+    private void revokeBestEffort(String refreshToken) {
         try {
             oauthGateway.revoke(refreshToken);
         } catch (RuntimeException exception) {
-            LOGGER.warn("HubSpot token revocation failed for {}; operator follow-up may be required", reason);
+            if (exception instanceof HubSpotOAuthException oauthException) {
+                LOGGER.atWarn()
+                        .addKeyValue("component", "hubspot_oauth")
+                        .addKeyValue("operation", "revoke_credential")
+                        .addKeyValue("result", "FAILED")
+                        .addKeyValue("errorCode", operationalError(oauthException.category()).name())
+                        .addKeyValue("providerErrorCode", oauthException.category().name())
+                        .log("HubSpot token revocation failed; operator follow-up may be required");
+            } else {
+                LOGGER.atError()
+                        .addKeyValue("component", "hubspot_oauth")
+                        .addKeyValue("operation", "revoke_credential")
+                        .addKeyValue("result", "FAILED")
+                        .addKeyValue("errorCode", OperationalErrorCode.INTERNAL_ERROR.name())
+                        .setCause(SafeDiagnosticException.from(exception))
+                        .log("HubSpot token revocation failed unexpectedly; operator follow-up may be required");
+            }
         }
     }
 
@@ -135,8 +166,26 @@ public final class HubSpotInstallationService implements HubSpotInstallationUseC
                 ? oauthException.category() : fallback;
     }
 
-    private static void logFailure(UUID correlationId, HubSpotOAuthFailureCategory category) {
-        LOGGER.warn("HubSpot installation failed correlationId={} category={}", correlationId, category);
+    private static void logFailure(UUID oauthOperationId, HubSpotOAuthFailureCategory category) {
+        LOGGER.atWarn()
+                .addKeyValue("component", "hubspot_oauth")
+                .addKeyValue("operation", "oauth_callback")
+                .addKeyValue("result", "FAILED")
+                .addKeyValue("operationId", oauthOperationId)
+                .addKeyValue("errorCode", operationalError(category).name())
+                .addKeyValue("providerErrorCode", category.name())
+                .log("HubSpot installation failed");
+    }
+
+    private static OperationalErrorCode operationalError(HubSpotOAuthFailureCategory category) {
+        return switch (category) {
+            case TOKEN_EXCHANGE_PROVIDER_UNAVAILABLE, TOKEN_INTROSPECTION_PROVIDER_UNAVAILABLE ->
+                    OperationalErrorCode.PROVIDER_UNAVAILABLE;
+            case TOKEN_EXCHANGE_REJECTED, TOKEN_INTROSPECTION_REJECTED,
+                    ACCOUNT_IDENTITY_MISMATCH, REQUIRED_SCOPE_MISSING ->
+                    OperationalErrorCode.PROVIDER_AUTH_REQUIRED;
+            default -> OperationalErrorCode.INTERNAL_ERROR;
+        };
     }
 
 }

@@ -1,9 +1,13 @@
 package com.udmconsulting.platform.credential.application;
 
+import com.udmconsulting.platform.activity.application.ActivityContext;
+import com.udmconsulting.platform.activity.domain.ActivityActor;
+import com.udmconsulting.platform.activity.domain.ActivityActorSource;
 import com.udmconsulting.platform.connection.domain.PlatformConnection;
 import com.udmconsulting.platform.connection.domain.PlatformConnectionId;
 import com.udmconsulting.platform.credential.domain.ConnectionCredential;
 import com.udmconsulting.platform.credential.domain.EncryptedSecret;
+import com.udmconsulting.platform.supportability.DiagnosticContext;
 import java.util.Objects;
 import java.util.Set;
 import org.springframework.stereotype.Service;
@@ -53,13 +57,30 @@ public final class ConnectionCredentialService {
 
     public void requireReauthentication(
             PlatformConnectionId connectionId, long expectedGeneration) {
-        if (!credentialStore.requireReauthenticationIfGeneration(connectionId, expectedGeneration)) {
+        ActivityContext activityContext = new ActivityContext(
+                ActivityActor.system(), DiagnosticContext.currentDiagnosticIdOrNew());
+        if (!credentialStore.requireReauthenticationIfGeneration(
+                connectionId, expectedGeneration, activityContext)) {
             throw new ConcurrentCredentialChangeException();
         }
     }
 
     public void disconnect(PlatformConnectionId connectionId, long expectedGeneration) {
-        if (!credentialStore.disconnectIfGeneration(connectionId, expectedGeneration)) {
+        disconnect(
+                connectionId,
+                expectedGeneration,
+                new ActivityContext(
+                        ActivityActor.unattributed(
+                                ActivityActorSource.APPLICATION),
+                        DiagnosticContext.currentDiagnosticIdOrNew()));
+    }
+
+    public void disconnect(
+            PlatformConnectionId connectionId,
+            long expectedGeneration,
+            ActivityContext activityContext) {
+        if (!credentialStore.disconnectIfGeneration(
+                connectionId, expectedGeneration, activityContext)) {
             throw new ConcurrentCredentialChangeException();
         }
     }

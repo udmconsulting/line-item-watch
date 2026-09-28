@@ -1,6 +1,7 @@
 package com.udmconsulting.platform.credential.application;
 
 import com.udmconsulting.platform.connection.domain.PlatformConnectionId;
+import com.udmconsulting.platform.activity.application.ActivityContext;
 import com.udmconsulting.platform.credential.domain.ConnectionCredential;
 import com.udmconsulting.platform.credential.domain.EncryptedSecret;
 import java.util.Optional;
@@ -17,7 +18,12 @@ public interface ConnectionCredentialStore {
             Set<String> grantedScopes);
 
     boolean requireReauthenticationIfGeneration(
-            PlatformConnectionId connectionId, long expectedGeneration);
+            PlatformConnectionId connectionId,
+            long expectedGeneration,
+            ActivityContext activityContext);
 
-    boolean disconnectIfGeneration(PlatformConnectionId connectionId, long expectedGeneration);
+    boolean disconnectIfGeneration(
+            PlatformConnectionId connectionId,
+            long expectedGeneration,
+            ActivityContext activityContext);
 }

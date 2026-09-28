@@ -46,7 +46,8 @@ class DealAuditEndpointEnabledIntegrationTest {
     void explicitConfigurationActivatesCompleteSignedReadBoundary() {
         assertThat(applicationContext.containsBean("hubSpotDealAuditController")).isTrue();
         assertThat(applicationContext.containsBean("hubSpotUiExtensionRequestAuthenticator")).isTrue();
-        assertThat(applicationContext.containsBean("dealAuditCorrelationFilter")).isTrue();
+        assertThat(applicationContext.containsBean("correlationFilter")).isTrue();
+        assertThat(applicationContext.containsBean("httpOperationMetricsFilter")).isTrue();
         assertThat(applicationContext.containsBean("dealAuditErrorHandler")).isTrue();
         assertThat(applicationContext.containsBean("hubSpotDealAuditReadService")).isTrue();
     }

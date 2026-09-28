@@ -81,7 +81,8 @@ class PlatformPersistenceIntegrationTest {
                 "platform_connection",
                 "tenant_entitlement",
                 "oauth_install_state",
-                "connection_credential");
+                "connection_credential",
+                "application_activity_audit");
     }
 
     @Test

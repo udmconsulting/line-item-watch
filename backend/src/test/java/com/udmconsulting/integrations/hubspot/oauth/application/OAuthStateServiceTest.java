@@ -30,7 +30,7 @@ class OAuthStateServiceTest {
                 .isEqualTo(OAuthStateService.hash(issued.value()))
                 .isNotEqualTo(java.util.Base64.getUrlDecoder().decode(issued.value()));
 
-        assertThat(service.consume(issued.value())).isEqualTo(issued.correlationId());
+        assertThat(service.consume(issued.value())).isEqualTo(issued.oauthOperationId());
         assertThatThrownBy(() -> service.consume(issued.value()))
                 .isInstanceOfSatisfying(OAuthStateException.class,
                         exception -> assertThat(exception.reason())

@@ -1,7 +1,9 @@
 package com.udmconsulting.integrations.hubspot.lineitemwatch.audit;
 
+import com.udmconsulting.platform.supportability.ApplicationOperation;
+import com.udmconsulting.platform.supportability.CorrelationFilter;
+import com.udmconsulting.platform.supportability.RequestSupportability;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
@@ -35,7 +37,8 @@ final class HubSpotDealAuditController {
     ResponseEntity<DealAuditViewDto> read(
             @PathVariable String dealId,
             HttpServletRequest request) {
-        UUID correlationId = DealAuditCorrelationFilter.correlationId(request);
+        RequestSupportability.operation(request, ApplicationOperation.DEAL_AUDIT_READ);
+        java.util.UUID correlationId = CorrelationFilter.correlationId(request);
         AuthenticatedHubSpotUiCaller caller = authenticator.authenticate(request);
         DealAuditQueryFactory.QueryInput input = queryFactory.create(dealId, request);
         DealAuditViewDto response = DealAuditViewDto.from(

@@ -1,6 +1,11 @@
 package com.udmconsulting.integrations.hubspot.oauth.infrastructure.persistence;
 
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotInstallationStore;
+import com.udmconsulting.platform.activity.application.ActivityContext;
+import com.udmconsulting.platform.activity.application.ApplicationActivityAudit;
+import com.udmconsulting.platform.activity.domain.ActivityAction;
+import com.udmconsulting.platform.activity.domain.ActivityResourceType;
+import com.udmconsulting.platform.connection.domain.ConnectionStatus;
 import com.udmconsulting.platform.connection.domain.PlatformConnectionId;
 import com.udmconsulting.platform.connection.domain.Provider;
 import com.udmconsulting.platform.credential.application.SecretContext;
@@ -25,16 +30,39 @@ public class JdbcHubSpotInstallationStore implements HubSpotInstallationStore {
 
     private final JdbcTemplate jdbcTemplate;
     private final SecretProtector secretProtector;
+    private final ApplicationActivityAudit activityAudit;
 
-    public JdbcHubSpotInstallationStore(JdbcTemplate jdbcTemplate, SecretProtector secretProtector) {
+    public JdbcHubSpotInstallationStore(
+            JdbcTemplate jdbcTemplate,
+            SecretProtector secretProtector,
+            ApplicationActivityAudit activityAudit) {
         this.jdbcTemplate = jdbcTemplate;
         this.secretProtector = secretProtector;
+        this.activityAudit = activityAudit;
     }
 
     @Override
     @Transactional
     public FinalizedInstallation finalizeInstallation(
             String externalAccountId, String refreshToken, Set<String> grantedScopes) {
+        return finalizeInstallation(
+                externalAccountId,
+                refreshToken,
+                grantedScopes,
+                new ActivityContext(
+                        com.udmconsulting.platform.activity.domain.ActivityActor.unattributed(
+                                com.udmconsulting.platform.activity.domain.ActivityActorSource.HUBSPOT),
+                        com.udmconsulting.platform.supportability.DiagnosticContext
+                                .currentDiagnosticIdOrNew()));
+    }
+
+    @Override
+    @Transactional
+    public FinalizedInstallation finalizeInstallation(
+            String externalAccountId,
+            String refreshToken,
+            Set<String> grantedScopes,
+            ActivityContext activityContext) {
         acquireAccountLock(externalAccountId);
         ConnectionIdentity identity = findConnection(externalAccountId)
                 .orElseGet(() -> createConnection(externalAccountId));
@@ -44,11 +72,33 @@ public class JdbcHubSpotInstallationStore implements HubSpotInstallationStore {
                 refreshToken,
                 new SecretContext(Provider.HUBSPOT, identity.connectionId()));
         upsertCredential(identity.connectionId(), encrypted, grantedScopes, credentialGeneration);
-        jdbcTemplate.update("""
+        int entitlementInserted = jdbcTemplate.update("""
                 INSERT INTO tenant_entitlement (tenant_id, product_module)
                 VALUES (?, 'LINE_ITEM_WATCH')
                 ON CONFLICT (tenant_id, product_module) DO NOTHING
                 """, identity.tenantId().value());
+        activityAudit.record(
+                identity.tenantId(),
+                identity.connectionId(),
+                activityContext,
+                identity.previousStatus() == ConnectionStatus.ACTIVE
+                        ? ActivityAction.PLATFORM_CONNECTION_REAUTHORIZED
+                        : ActivityAction.PLATFORM_CONNECTION_ACTIVATED,
+                ActivityResourceType.PLATFORM_CONNECTION,
+                identity.connectionId().value().toString(),
+                identity.previousStatus().name(),
+                ConnectionStatus.ACTIVE.name());
+        if (entitlementInserted == 1) {
+            activityAudit.record(
+                    identity.tenantId(),
+                    null,
+                    activityContext,
+                    ActivityAction.ENTITLEMENT_ACTIVATED,
+                    ActivityResourceType.ENTITLEMENT,
+                    "LINE_ITEM_WATCH",
+                    "DISABLED",
+                    "ENABLED");
+        }
         return new FinalizedInstallation(identity.tenantId(), identity.connectionId(), prior);
     }
 
@@ -61,13 +111,14 @@ public class JdbcHubSpotInstallationStore implements HubSpotInstallationStore {
 
     private Optional<ConnectionIdentity> findConnection(String externalAccountId) {
         List<ConnectionIdentity> matches = jdbcTemplate.query("""
-                SELECT id, tenant_id
+                SELECT id, tenant_id, status
                 FROM platform_connection
                 WHERE provider = 'HUBSPOT' AND external_account_id = ?
                 FOR UPDATE
                 """, (resultSet, rowNumber) -> new ConnectionIdentity(
                         new TenantId(resultSet.getObject("tenant_id", UUID.class)),
-                        new PlatformConnectionId(resultSet.getObject("id", UUID.class))),
+                        new PlatformConnectionId(resultSet.getObject("id", UUID.class)),
+                        ConnectionStatus.valueOf(resultSet.getString("status"))),
                 externalAccountId);
         return matches.stream().findFirst();
     }
@@ -81,7 +132,7 @@ public class JdbcHubSpotInstallationStore implements HubSpotInstallationStore {
                     (id, tenant_id, provider, external_account_id, status)
                 VALUES (?, ?, 'HUBSPOT', ?, 'DISCONNECTED')
                 """, connectionId.value(), tenantId.value(), externalAccountId);
-        return new ConnectionIdentity(tenantId, connectionId);
+        return new ConnectionIdentity(tenantId, connectionId, ConnectionStatus.DISCONNECTED);
     }
 
     private Optional<ConnectionCredential> lockAndLoadCredential(PlatformConnectionId connectionId) {
@@ -155,6 +206,9 @@ public class JdbcHubSpotInstallationStore implements HubSpotInstallationStore {
         });
     }
 
-    private record ConnectionIdentity(TenantId tenantId, PlatformConnectionId connectionId) {
+    private record ConnectionIdentity(
+            TenantId tenantId,
+            PlatformConnectionId connectionId,
+            ConnectionStatus previousStatus) {
     }
 }

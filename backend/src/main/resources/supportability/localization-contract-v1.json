@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "fallbackLocale": "en",
+  "context": {
+    "messageLocale": "user.language",
+    "formatLocale": "user.locale",
+    "timeZone": "portal.timezone",
+    "invalidTimeZoneFallback": "UTC"
+  },
+  "localeResolution": [
+    "TRIM",
+    "UNDERSCORE_TO_HYPHEN",
+    "BCP47_CANONICALIZE",
+    "EXACT_SUPPORTED_LOCALE",
+    "BASE_LANGUAGE",
+    "FALLBACK_EN"
+  ],
+  "keyNamespaces": {
+    "errors": "errors.{publicErrorCode}.{title|description|action}",
+    "fields": "fields.{monitoredLineItemProperty}",
+    "events": "events.{lineItemAuditType}",
+    "valueStates": "valueStates.{valueState}",
+    "membership": "membership.{membershipState}",
+    "historyCoverage": "historyCoverage.{coverageMode}",
+    "common": "common.{semanticKey}"
+  },
+  "publicErrors": {
+    "INVALID_REQUEST": "errors.INVALID_REQUEST",
+    "AUTHENTICATION_FAILED": "errors.AUTHENTICATION_FAILED",
+    "ACCOUNT_UNAVAILABLE": "errors.ACCOUNT_UNAVAILABLE",
+    "SERVICE_UNAVAILABLE": "errors.SERVICE_UNAVAILABLE",
+    "INTERNAL_ERROR": "errors.INTERNAL_ERROR"
+  },
+  "formatting": {
+    "dates": "LOCALE_AND_PORTAL_TIMEZONE",
+    "numbers": "FORMAT_LOCALE",
+    "pluralization": "MESSAGE_LOCALE",
+    "currency": "ONLY_WITH_EXPLICIT_VALID_CURRENCY_CODE",
+    "distinctValueStates": ["UNKNOWN", "ABSENT", "NOT_APPLICABLE"]
+  },
+  "resolutionVectors": [
+    {"input": " en_US ", "supported": ["en", "en-US"], "expected": "en-US"},
+    {"input": "en-GB", "supported": ["en"], "expected": "en"},
+    {"input": "hu-HU", "supported": ["en"], "expected": "en"},
+    {"input": "not_a_locale_@", "supported": ["en"], "expected": "en"},
+    {"input": "", "supported": ["en"], "expected": "en"}
+  ]
+}

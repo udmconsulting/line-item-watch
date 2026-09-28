@@ -30,13 +30,17 @@ Install state expires after 10 minutes. Only its SHA-256 digest and correlation/
 
 The implemented MODEL B projection retains immutable first-complete `BASELINE`, replaceable complete `OBSERVED`, sparse derived `LATEST`, and semantic audit history with source UUID provenance and Deal context. Deletion is auditable and freezes the final known state. These records are customer data. Audit history has an explicit product lifecycle: it is deleted with its owning Line Item/connection/Tenant, not as an incidental consequence of raw-signal deletion. Duration, export, and customer-directed deletion behavior are TBD.
 
+### Application activity audit
+
+Committed Platform Connection and entitlement transitions append a strict activity row in the same PostgreSQL transaction as the state change. Normal application code exposes insert only; no-op or losing concurrent transitions create no success row. This application-level append-only contract is not cryptographic tamper resistance or WORM storage. Rows cascade with their Tenant/connection, and future legal deletion or approved lifecycle policy may remove them. Exact retention, privileged access, export, and any sealing/archive requirements remain TBD. Opaque verified actor references may be pseudonymous personal data and require the same purpose limitation and access controls.
+
 ### Webhook change signals
 
 Authenticated ingress retains normalized immutable signals, including exact monitored property text up to 65,535 characters. Keeping the event-time value is necessary because a later deletion can make provider reconstruction impossible. Raw payloads, headers, signatures, secrets/tokens, complete events, and provider delivery-attempt metadata are not retained. Deduplicated retries never update an existing row. Processing state follows a signal and is removed if that raw signal is later removed. Audit source rows deliberately store the signal UUID without a signal foreign key; therefore raw retention cannot destructively cascade into semantic history. No raw-signal retention job exists in P.5. Any future policy must process/reconcile eligible evidence first, preserve required audit provenance, and test its product/legal consequences. Exact signal duration, disconnect handling, and export policy remain TBD.
 
 ### Logs and operational records
 
-Use the shortest useful retention consistent with diagnosis, security, and reliability. Avoid customer payloads; control access and apply expiry. Exact durations and treatment of tenant identifiers during deletion are TBD.
+Use the shortest useful retention consistent with diagnosis, security, and reliability. Correlation/operation IDs and internal references are operational metadata, not identity proof. Avoid customer payloads; control access and apply expiry. Exact durations and treatment of tenant identifiers during deletion are TBD.
 
 ### Backups
 

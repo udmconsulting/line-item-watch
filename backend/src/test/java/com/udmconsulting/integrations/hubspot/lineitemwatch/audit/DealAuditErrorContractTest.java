@@ -15,6 +15,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import com.udmconsulting.platform.supportability.CorrelationFilter;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -48,10 +49,14 @@ class DealAuditErrorContractTest {
         String body = result.getResponse().getContentAsString();
         String correlationId = correlationId(body);
         assertThat(correlationId).isNotEqualTo("caller-controlled-correlation");
+        assertThat(result.getResponse().getHeader(CorrelationFilter.HEADER))
+                .isEqualTo(correlationId);
         assertThat(body).doesNotContain("signature", "technical detail", "message");
         assertThat(context.logs().list)
+                .anySatisfy(event -> assertThat(event.getMDCPropertyMap())
+                        .containsEntry("correlationId", correlationId));
+        assertThat(context.logs().list)
                 .extracting(event -> event.getFormattedMessage())
-                .anySatisfy(message -> assertThat(message).contains(correlationId))
                 .allSatisfy(message -> assertThat(message)
                         .doesNotContain("1001", "456", "789", "user@example.test", "12345"));
         context.close();
@@ -138,7 +143,7 @@ class DealAuditErrorContractTest {
         logger.addAppender(logs);
         MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new DealAuditErrorHandler())
-                .addFilters(new DealAuditCorrelationFilter())
+                .addFilters(new CorrelationFilter())
                 .build();
         return new TestContext(mvc, logger, logs);
     }

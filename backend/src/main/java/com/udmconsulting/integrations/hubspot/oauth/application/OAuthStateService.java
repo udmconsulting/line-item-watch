@@ -40,10 +40,10 @@ public final class OAuthStateService {
         secureRandom.nextBytes(rawState);
         String state = Base64.getUrlEncoder().withoutPadding().encodeToString(rawState);
         Instant createdAt = clock.instant();
-        UUID correlationId = UUID.randomUUID();
+        UUID oauthOperationId = UUID.randomUUID();
         stateStore.deleteRetainedBefore(createdAt.minus(RETENTION));
-        stateStore.store(hash(state), correlationId, createdAt, createdAt.plus(STATE_LIFETIME));
-        return new IssuedState(state, correlationId);
+        stateStore.store(hash(state), oauthOperationId, createdAt, createdAt.plus(STATE_LIFETIME));
+        return new IssuedState(state, oauthOperationId);
     }
 
     public UUID consume(String state) {
@@ -68,11 +68,11 @@ public final class OAuthStateService {
         }
     }
 
-    public record IssuedState(String value, UUID correlationId) {
+    public record IssuedState(String value, UUID oauthOperationId) {
 
         @Override
         public String toString() {
-            return "IssuedState[value=<redacted>, correlationId=" + correlationId + "]";
+            return "IssuedState[value=<redacted>, oauthOperationId=" + oauthOperationId + "]";
         }
     }
 }

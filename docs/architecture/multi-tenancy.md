@@ -29,7 +29,7 @@ Tenant ownership must make it possible to identify and delete all relevant custo
 - apply least privilege to users, services, operators, and database access;
 - prevent cross-tenant reads and writes through application design and storage constraints where appropriate;
 - test negative cross-tenant cases, not only successful access;
-- include non-sensitive tenant and connection identifiers in operational context while excluding secrets and unnecessary business payloads; and
+- include internal `tenantRef` and `connectionRef` in operational context only where useful while excluding external accounts, secrets, and unnecessary business payloads; and
 - audit privileged access where appropriate.
 
 Tenant persistence and negative isolation tests exist. OAuth callback identity comes only from the validated provider exchange, while internal uninstall and baseline synchronization require both Tenant and connection identity. Webhook routing accepts only an authenticated provider `portalId`, resolves the globally unique HubSpot Platform Connection, and never provisions a Tenant. Unknown, inactive, or unentitled routes are ignored.

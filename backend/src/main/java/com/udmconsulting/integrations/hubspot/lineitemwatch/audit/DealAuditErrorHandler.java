@@ -1,5 +1,10 @@
 package com.udmconsulting.integrations.hubspot.lineitemwatch.audit;
 
+import com.udmconsulting.platform.supportability.CorrelationFilter;
+import com.udmconsulting.platform.supportability.OperationalErrorCode;
+import com.udmconsulting.platform.supportability.PublicErrorCode;
+import com.udmconsulting.platform.supportability.RequestSupportability;
+import com.udmconsulting.platform.supportability.SafeDiagnosticException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -20,22 +25,29 @@ final class DealAuditErrorHandler {
 
     @ExceptionHandler(HubSpotUiExtensionAuthenticationException.class)
     ResponseEntity<ErrorEnvelope> authentication(HttpServletRequest request) {
-        return error(request, HttpStatus.UNAUTHORIZED, "AUTHENTICATION_FAILED", "AUTHENTICATION_FAILED", null);
+        return error(request, HttpStatus.UNAUTHORIZED,
+                PublicErrorCode.AUTHENTICATION_FAILED,
+                OperationalErrorCode.AUTHENTICATION_FAILED, null);
     }
 
     @ExceptionHandler(DealAuditRequestException.class)
     ResponseEntity<ErrorEnvelope> invalidRequest(HttpServletRequest request) {
-        return error(request, HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "INVALID_REQUEST", null);
+        return error(request, HttpStatus.BAD_REQUEST,
+                PublicErrorCode.INVALID_REQUEST, OperationalErrorCode.INVALID_REQUEST, null);
     }
 
     @ExceptionHandler(AccountUnavailableException.class)
     ResponseEntity<ErrorEnvelope> unavailableAccount(HttpServletRequest request) {
-        return error(request, HttpStatus.FORBIDDEN, "ACCOUNT_UNAVAILABLE", "ACCOUNT_UNAVAILABLE", null);
+        return error(request, HttpStatus.FORBIDDEN,
+                PublicErrorCode.ACCOUNT_UNAVAILABLE,
+                OperationalErrorCode.ACCOUNT_UNAVAILABLE, null);
     }
 
     @ExceptionHandler(AccountResolutionInvariantException.class)
     ResponseEntity<ErrorEnvelope> invariant(HttpServletRequest request) {
-        return error(request, HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "ACCOUNT_INVARIANT", null);
+        return error(request, HttpStatus.INTERNAL_SERVER_ERROR,
+                PublicErrorCode.INTERNAL_ERROR,
+                OperationalErrorCode.INVARIANT_VIOLATION, null);
     }
 
     @ExceptionHandler(DataAccessException.class)
@@ -43,9 +55,9 @@ final class DealAuditErrorHandler {
         return error(
                 request,
                 HttpStatus.SERVICE_UNAVAILABLE,
-                "SERVICE_UNAVAILABLE",
-                "DATABASE_UNAVAILABLE",
-                exception.getClass().getName());
+                PublicErrorCode.SERVICE_UNAVAILABLE,
+                OperationalErrorCode.DATABASE_UNAVAILABLE,
+                null);
     }
 
     @ExceptionHandler(Exception.class)
@@ -53,34 +65,41 @@ final class DealAuditErrorHandler {
         return error(
                 request,
                 HttpStatus.INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                "INTERNAL_FAILURE",
-                exception.getClass().getName());
+                PublicErrorCode.INTERNAL_ERROR,
+                OperationalErrorCode.INTERNAL_ERROR,
+                exception);
     }
 
     private static ResponseEntity<ErrorEnvelope> error(
             HttpServletRequest request,
             HttpStatus status,
-            String code,
-            String category,
-            String exceptionType) {
-        UUID correlationId = DealAuditCorrelationFilter.correlationId(request);
+            PublicErrorCode code,
+            OperationalErrorCode category,
+            Throwable exception) {
+        UUID correlationId = CorrelationFilter.correlationId(request);
+        RequestSupportability.error(request, category);
         if (status.is5xxServerError()) {
-            LOGGER.error(
-                    "Deal audit read failed correlationId={} category={} exceptionType={}",
-                    correlationId,
-                    category,
-                    exceptionType == null ? "NONE" : exceptionType);
+            var event = LOGGER.atError()
+                    .addKeyValue("component", "line_item_watch")
+                    .addKeyValue("operation", "deal_audit_read")
+                    .addKeyValue("result", "FAILED")
+                    .addKeyValue("errorCode", category.name());
+            if (exception != null) {
+                event.setCause(SafeDiagnosticException.from(exception));
+            }
+            event.log("Deal audit read failed");
         } else {
-            LOGGER.warn(
-                    "Deal audit read rejected correlationId={} category={}",
-                    correlationId,
-                    category);
+            LOGGER.atWarn()
+                    .addKeyValue("component", "line_item_watch")
+                    .addKeyValue("operation", "deal_audit_read")
+                    .addKeyValue("result", "REJECTED")
+                    .addKeyValue("errorCode", category.name())
+                    .log("Deal audit read rejected");
         }
         return ResponseEntity.status(status)
                 .cacheControl(CacheControl.noStore())
                 .header("X-Content-Type-Options", "nosniff")
-                .body(new ErrorEnvelope(new ApiError(code, correlationId)));
+                .body(new ErrorEnvelope(new ApiError(code.name(), correlationId)));
     }
 
     record ErrorEnvelope(ApiError error) {

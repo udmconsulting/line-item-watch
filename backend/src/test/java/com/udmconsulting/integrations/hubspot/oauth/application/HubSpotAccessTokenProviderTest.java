@@ -7,6 +7,7 @@ import com.udmconsulting.integrations.hubspot.config.HubSpotOAuthProperties;
 import com.udmconsulting.platform.connection.domain.ConnectionStatus;
 import com.udmconsulting.platform.connection.domain.ExternalAccountId;
 import com.udmconsulting.platform.connection.domain.PlatformConnection;
+import com.udmconsulting.platform.activity.application.ActivityContext;
 import com.udmconsulting.platform.connection.domain.PlatformConnectionId;
 import com.udmconsulting.platform.connection.domain.Provider;
 import com.udmconsulting.platform.credential.application.ConcurrentCredentialChangeException;
@@ -146,7 +147,7 @@ class HubSpotAccessTokenProviderTest {
 
         assertThat(fixture.store.credential).isNull();
         assertThat(fixture.store.reauthenticationRequired).isTrue();
-        assertThat(output).contains("category=REQUIRED_SCOPE_MISSING")
+        assertThat(output).contains("providerErrorCode=\"REQUIRED_SCOPE_MISSING\"")
                 .doesNotContain("sensitive-under-scoped-access", "refresh-token");
     }
 
@@ -164,7 +165,7 @@ class HubSpotAccessTokenProviderTest {
                 .isInstanceOf(ReauthenticationRequiredException.class);
 
         assertThat(fixture.store.credential).isNull();
-        assertThat(output).contains("category=ACCOUNT_IDENTITY_MISMATCH")
+        assertThat(output).contains("providerErrorCode=\"ACCOUNT_IDENTITY_MISMATCH\"")
                 .doesNotContain("sensitive-wrong-account-access", "refresh-token");
     }
 
@@ -231,7 +232,9 @@ class HubSpotAccessTokenProviderTest {
 
         @Override
         public boolean requireReauthenticationIfGeneration(
-                PlatformConnectionId connectionId, long expectedGeneration) {
+                PlatformConnectionId connectionId,
+                long expectedGeneration,
+                ActivityContext activityContext) {
             lastReauthenticationGeneration = expectedGeneration;
             if (credential == null || credential.credentialGeneration() != expectedGeneration) {
                 return false;
@@ -242,7 +245,10 @@ class HubSpotAccessTokenProviderTest {
         }
 
         @Override
-        public boolean disconnectIfGeneration(PlatformConnectionId connectionId, long expectedGeneration) {
+        public boolean disconnectIfGeneration(
+                PlatformConnectionId connectionId,
+                long expectedGeneration,
+                ActivityContext activityContext) {
             return false;
         }
     }

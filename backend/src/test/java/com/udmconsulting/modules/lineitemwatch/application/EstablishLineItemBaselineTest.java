@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.udmconsulting.modules.lineitemwatch.domain.BillingStart;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemObservation;
 import com.udmconsulting.modules.lineitemwatch.domain.ProviderObjectId;
+import com.udmconsulting.platform.activity.application.ActivityContext;
 import com.udmconsulting.platform.connection.application.PlatformConnectionService;
 import com.udmconsulting.platform.connection.application.PlatformConnectionStore;
 import com.udmconsulting.platform.connection.domain.ConnectionStatus;
@@ -249,13 +250,19 @@ class EstablishLineItemBaselineTest {
         private int checks;
 
         @Override
-        public void enable(TenantId tenantId, ProductModule productModule) {
-            entries.add(tenantId + ":" + productModule);
+        public boolean enable(
+                TenantId tenantId,
+                ProductModule productModule,
+                ActivityContext activityContext) {
+            return entries.add(tenantId + ":" + productModule);
         }
 
         @Override
-        public void disable(TenantId tenantId, ProductModule productModule) {
-            entries.remove(tenantId + ":" + productModule);
+        public boolean disable(
+                TenantId tenantId,
+                ProductModule productModule,
+                ActivityContext activityContext) {
+            return entries.remove(tenantId + ":" + productModule);
         }
 
         @Override

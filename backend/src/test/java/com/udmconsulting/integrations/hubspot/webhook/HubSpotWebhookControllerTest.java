@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.udmconsulting.integrations.hubspot.config.HubSpotWebhookProperties;
+import com.udmconsulting.platform.supportability.CorrelationFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -36,7 +37,9 @@ class HubSpotWebhookControllerTest {
     void setUp() {
         service = mock(HubSpotWebhookIngressService.class);
         controller = new HubSpotWebhookController(service);
-        mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        mvc = MockMvcBuilders.standaloneSetup(controller)
+                .addFilters(new CorrelationFilter())
+                .build();
     }
 
     @Test
@@ -61,6 +64,8 @@ class HubSpotWebhookControllerTest {
                         .header("X-Forwarded-Host", "attacker.example")
                         .content(body))
                 .andExpect(status().isNoContent())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .header().exists(CorrelationFilter.HEADER))
                 .andExpect(content().string(""));
 
         verify(service).ingest("POST", "signature", "timestamp", body);

@@ -1,5 +1,9 @@
 package com.udmconsulting.platform.entitlement.infrastructure.persistence;
 
+import com.udmconsulting.platform.activity.application.ActivityContext;
+import com.udmconsulting.platform.activity.application.ApplicationActivityAudit;
+import com.udmconsulting.platform.activity.domain.ActivityAction;
+import com.udmconsulting.platform.activity.domain.ActivityResourceType;
 import com.udmconsulting.platform.entitlement.application.EntitlementStore;
 import com.udmconsulting.platform.module.domain.ProductModule;
 import com.udmconsulting.platform.tenant.domain.TenantId;
@@ -10,21 +14,55 @@ import org.springframework.transaction.annotation.Transactional;
 public class JpaEntitlementStore implements EntitlementStore {
 
     private final TenantEntitlementJpaRepository repository;
+    private final ApplicationActivityAudit activityAudit;
 
-    public JpaEntitlementStore(TenantEntitlementJpaRepository repository) {
+    public JpaEntitlementStore(
+            TenantEntitlementJpaRepository repository,
+            ApplicationActivityAudit activityAudit) {
         this.repository = repository;
+        this.activityAudit = activityAudit;
     }
 
     @Override
     @Transactional
-    public void enable(TenantId tenantId, ProductModule productModule) {
-        repository.enable(tenantId.value(), productModule.name());
+    public boolean enable(
+            TenantId tenantId,
+            ProductModule productModule,
+            ActivityContext activityContext) {
+        if (repository.enable(tenantId.value(), productModule.name()) == 0) {
+            return false;
+        }
+        activityAudit.record(
+                tenantId,
+                null,
+                activityContext,
+                ActivityAction.ENTITLEMENT_ACTIVATED,
+                ActivityResourceType.ENTITLEMENT,
+                productModule.name(),
+                "DISABLED",
+                "ENABLED");
+        return true;
     }
 
     @Override
     @Transactional
-    public void disable(TenantId tenantId, ProductModule productModule) {
-        repository.disable(tenantId.value(), productModule.name());
+    public boolean disable(
+            TenantId tenantId,
+            ProductModule productModule,
+            ActivityContext activityContext) {
+        if (repository.disable(tenantId.value(), productModule.name()) == 0) {
+            return false;
+        }
+        activityAudit.record(
+                tenantId,
+                null,
+                activityContext,
+                ActivityAction.ENTITLEMENT_DEACTIVATED,
+                ActivityResourceType.ENTITLEMENT,
+                productModule.name(),
+                "ENABLED",
+                "DISABLED");
+        return true;
     }
 
     @Override

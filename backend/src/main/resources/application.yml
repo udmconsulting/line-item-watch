@@ -16,6 +16,10 @@ spring:
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
 
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [correlationId=%X{correlationId:-} operationId=%X{operationId:-}] %logger{36} %kvp - %msg%n%wEx"
+
 hubspot:
   oauth:
     client-id: ${HUBSPOT_OAUTH_CLIENT_ID}
