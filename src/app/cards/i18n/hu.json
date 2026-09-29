@@ -1,0 +1,133 @@
+{
+  "errors": {
+    "INVALID_REQUEST": {
+      "title": "A kérés érvénytelen",
+      "description": "A Deal auditkérése nem értelmezhető.",
+      "action": "Frissítse a Dealt, majd próbálja újra."
+    },
+    "AUTHENTICATION_FAILED": {
+      "title": "A Line Item Watch hitelesítése sikertelen",
+      "description": "A HubSpot nem tudta engedélyezni ezt az auditkérést.",
+      "action": "Frissítse a Dealt. Ha a hiba fennmarad, csatlakoztassa újra az alkalmazást."
+    },
+    "ACCOUNT_UNAVAILABLE": {
+      "title": "A Line Item Watch nem érhető el ehhez a fiókhoz",
+      "description": "A fiók jelenleg nem használhatja a Deal auditelőzményeit.",
+      "action": "Kérje meg a rendszergazdát az alkalmazáskapcsolat és a jogosultság ellenőrzésére."
+    },
+    "SERVICE_UNAVAILABLE": {
+      "title": "Az auditelőzmények átmenetileg nem érhetők el",
+      "description": "A Line Item Watch nem érte el az audittárolót.",
+      "action": "Próbálja újra néhány perc múlva."
+    },
+    "INTERNAL_ERROR": {
+      "title": "Az auditelőzmények nem tölthetők be",
+      "description": "A Line Item Watch váratlan hibát észlelt.",
+      "action": "Próbálja újra. Ha a hiba fennmarad, küldje el a hivatkozást az ügyfélszolgálatnak."
+    },
+    "NETWORK": {
+      "title": "Nem sikerült kapcsolódni a Line Item Watch szolgáltatáshoz",
+      "description": "Az auditkérés nem érte el a szolgáltatást.",
+      "action": "Ellenőrizze a kapcsolatot, majd próbálja újra."
+    },
+    "TIMEOUT": {
+      "title": "Az auditkérés túllépte az időkorlátot",
+      "description": "A Line Item Watch nem válaszolt időben.",
+      "action": "Próbálja újra rövidesen."
+    },
+    "RATE_LIMITED": {
+      "title": "Túl sok auditkérés",
+      "description": "A Line Item Watch átmenetileg korlátozza a kéréseket.",
+      "action": "Várjon egy kicsit, majd próbálja újra."
+    },
+    "MALFORMED_RESPONSE": {
+      "title": "Az auditelőzmények nem jeleníthetők meg",
+      "description": "A szolgáltatás olyan adatot adott vissza, amelyet a kártya nem tud biztonságosan megjeleníteni.",
+      "action": "Próbálja újra. Ha a hiba fennmarad, forduljon az ügyfélszolgálathoz."
+    },
+    "LOCAL_CONFIGURATION": {
+      "title": "A Line Item Watch nincs beállítva",
+      "description": "Az API eredete hiányzik vagy érvénytelen ebben a HubSpot projektprofilban.",
+      "action": "Kérje meg a rendszergazdát a LINE_ITEM_WATCH_API_ORIGIN beállítására."
+    },
+    "LOCAL_CONTEXT": {
+      "title": "A Deal nem azonosítható",
+      "description": "A HubSpot nem adott érvényes Deal-azonosítót a kártyának.",
+      "action": "Frissítse a Dealt, majd nyissa meg újra a kártyát."
+    }
+  },
+  "fields": {
+    "name": "Név",
+    "quantity": "Mennyiség",
+    "unitPrice": "Egységár",
+    "unitDiscount": "Egységkedvezmény",
+    "discountPercentage": "Kedvezmény százalékban",
+    "billingFrequency": "Számlázási gyakoriság",
+    "billingStartDate": "Számlázás kezdőnapja",
+    "billingStartDelayDays": "Számlázás kezdési késleltetése (nap)",
+    "billingStartDelayMonths": "Számlázás kezdési késleltetése (hónap)",
+    "billingPeriod": "Számlázási időszak"
+  },
+  "events": {
+    "CREATED": "Line Item létrehozva",
+    "PROPERTY_CHANGED": "Tulajdonság módosult",
+    "DEAL_ASSOCIATED": "A Dealhez társítva",
+    "DEAL_DISASSOCIATED": "A Dealtől leválasztva",
+    "DELETED": "Line Item törölve"
+  },
+  "valueStates": {
+    "UNKNOWN": "Ismeretlen",
+    "ABSENT": "Nincs érték",
+    "PRESENT": "Létezik",
+    "VALUE": "Érték"
+  },
+  "membership": {
+    "PRESENT": "Jelenleg társítva",
+    "ABSENT": "Jelenleg nincs társítva",
+    "UNKNOWN": "A jelenlegi társítás ismeretlen",
+    "NOT_APPLICABLE": "Törölve",
+    "atDeletion": "Társítás törléskor: {value}"
+  },
+  "historyCoverage": {
+    "BASELINE_ANCHORED": "Az előzmények teljes megfigyelt alapállapottal kezdődnek ekkor: {date}.",
+    "SIGNAL_FIRST": "Az előzmények a legkorábbi megőrzött változási bizonyítékkal kezdődnek ekkor: {date}.",
+    "unknownState": "Néhány jelenlegi érték ismeretlen.",
+    "disclaimer": "A megfigyelési dátum nem garantálja, hogy minden szolgáltatói változás rögzítésre került."
+  },
+  "common": {
+    "title": "Line Item Watch",
+    "intro": "A Dealhez tartozó megőrzött Line Item állapotok és legutóbbi változások.",
+    "lineItems": "Line Itemek",
+    "recentChanges": "Legutóbbi változások",
+    "unnamedLineItem": "Névtelen Line Item",
+    "deleted": "Törölve",
+    "deletedAt": "Törölve: {date}",
+    "commercialDetails": "Kereskedelmi adatok",
+    "billingDetails": "Számlázási adatok",
+    "loadMoreLineItems": "További Line Itemek betöltése",
+    "loadMoreEvents": "További változások betöltése",
+    "retry": "Újrapróbálás",
+    "copyReference": "Hivatkozás másolása",
+    "reference": "Hivatkozás: {value}",
+    "noHistoryTitle": "Még nincs auditelőzmény",
+    "noHistoryDescription": "A Line Item Watch nem őriz előzményt ehhez a Dealhez.",
+    "noLineItemsTitle": "Nincs megőrzött Line Item",
+    "noLineItemsDescription": "Ehhez a Dealhez jelenleg nincs releváns megőrzött Line Item állapot.",
+    "noEventsTitle": "Nincs legutóbbi változás",
+    "noEventsDescription": "Ehhez a Dealhez nem érhető el megőrzött változási esemény.",
+    "initialLoading": "A Deal auditelőzményeinek betöltése",
+    "lineItemsLoading": "További Line Itemek betöltése",
+    "eventsLoading": "További változások betöltése",
+    "paginationErrorTitle": "A további találatok nem tölthetők be",
+    "paginationErrorDescription": "A már megjelenített találatok nem változtak. Próbálja újra ennek a résznek a betöltését.",
+    "lineItemReference": "Line Item {value}",
+    "lineItemName": "Line Item: {value}",
+    "changedField": "Módosított mező: {value}",
+    "before": "Előtte",
+    "after": "Utána",
+    "truncated": "Ezt az értéket az auditszolgáltatás lerövidítette.",
+    "unavailable": "Az információ nem érhető el.",
+    "days": { "one": "{value} nap", "other": "{value} nap" },
+    "months": { "one": "{value} hónap", "other": "{value} hónap" }
+  }
+}

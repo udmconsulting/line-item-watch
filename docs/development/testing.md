@@ -20,9 +20,26 @@ P.6.B tests cover server-owned correlation headers across success/error/OAuth/we
 
 P.6.C tests assert typed semantic failure codes instead of diagnostic sentences. Baseline coverage verifies every failure's intrinsic retryability plus connection/entitlement guards, provider identity and state changes, authorization, availability, malformed/incomplete responses, and object-ID compatibility. Signal-processing coverage carries `OperationalErrorCode` through worker classification and persistence, preserves runtime retry and exhaustion behavior, and verifies the exact persisted `RETRY_EXHAUSTED` value. Privacy tests continue to assert that credentials and provider-controlled details do not appear in diagnostics.
 
+P.7 frontend tests run from `src/app/cards` and cover the closed consumed response contract with forward-compatible additional fields, positive safe Deal IDs, all monitored fields and event types, lifecycle/membership/deletion/history-coverage rendering, full and section empty states, English/Hungarian key parity, locale and time-zone fallbacks, date-only stability, conservative decimal formatting without currency inference, closed public/local error categories, correlation-ID copying, diagnostic non-disclosure, initial retry, independent cursor pagination, duplicate-click suppression, out-of-order section responses, and partial-failure preservation. The localization validator derives semantic coverage from the backend Java enums and `localization-contract-v1.json` rather than maintaining a second manual backend contract.
+
+The P.7 lint configuration also resolves TypeScript declaration metadata and rejects use of APIs marked `@deprecated`, including HubSpot UI Extension SDK components and props. This is intentionally declaration-based so a future SDK deprecation is discoverable without maintaining a component-name denylist.
+
 The provider regression fixture deliberately omits `hub_id` and `scopes` from token issuance and supplies them only through introspection. PostgreSQL race tests cover ordinary generation advancement plus invalid-grant, replacement, stale introspection, scope-loss, uninstall responses after credential replacement or deletion/reinstall, concurrent first baseline writes, and commit-guard rejection after a winning disconnect, reauthentication transition, or entitlement removal. Commit-guard tests hold the winning mutation uncommitted, identify its PostgreSQL backend PID, and require PostgreSQL to report the persistence backend as lock-blocked by that PID before permitting the mutation to commit.
 
 Live HubSpot acceptance is intentionally opt-in and is not part of Maven verification. It requires an approved isolated account, environment-supplied secrets, matching callback configuration, and an explicit cleanup plan. Controlled P.4 genuine webhook delivery acceptance and cleanup were completed. Its retained local PostgreSQL evidence is deliberately not fabricated or redelivered for P.5.
+
+### Deal App Card live acceptance
+
+Follow the temporary-origin setup, validation, upload authorization, and cleanup sequence in [Local development](local-development.md#temporary-deal-app-card-live-acceptance-runbook). On an existing approved Deal, verify:
+
+- the Line Item Watch card renders in the Deal record's middle column and uses the current Deal context;
+- `hubspot.fetch` reaches the P.6 signed endpoint, whose signature and app checks plus account-to-Tenant, active Platform Connection, and entitlement resolution succeed;
+- current Line Item values, membership/deletion state, evidence coverage, and the available recent-event or honest empty-event state render without implying complete HubSpot history;
+- English and Hungarian copy render correctly using an already approved user-language test; changing a user's language is a separate HubSpot mutation;
+- the request performs no provider read and the card performs no CRM write or client persistence; and
+- safe public failures show localized application-owned copy and display a support reference only when the P.6 JSON error envelope supplies a valid correlation ID.
+
+Manual acceptance must not create, edit, associate, disassociate, or delete CRM objects simply to produce pagination or event volume. Independent section pagination, duplicate activation guards, stale Deal/request races, all event variants, and failure isolation remain automated-test responsibilities unless suitable retained data already exists.
 
 ### Retained P.4 signal-processing acceptance
 

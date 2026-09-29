@@ -1,0 +1,38 @@
+{
+  "name": "@line-item-watch/deal-card",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.17.0 <21"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write . --ignore-path ../../../../.gitignore",
+    "format:check": "prettier --check . --ignore-path ../../../../.gitignore",
+    "test": "npm run test:i18n && vitest run",
+    "test:i18n": "node scripts/validate-i18n.mjs",
+    "lint:fix": "eslint . --fix"
+  },
+  "dependencies": {
+    "@hubspot/ui-extensions": "0.17.0",
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@hubspot/eslint-config-ui-extensions": "1.2.0",
+    "@types/node": "20.19.43",
+    "@types/react": "18.3.31",
+    "eslint": "9.39.5",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-react": "7.37.5",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-unused-imports": "4.4.1",
+    "jiti": "2.7.0",
+    "prettier": "3.9.9",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.54.0",
+    "vitest": "3.2.7"
+  }
+}

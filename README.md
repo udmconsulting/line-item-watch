@@ -2,7 +2,7 @@
 
 Line Item Watch is the first Product Module of a planned modular B2B SaaS. Its initial purpose is to give HubSpot users a useful audit history for Deal Line Item changes: what changed, old and new values, when, who where available, and creation/removal behavior.
 
-The repository contains the accepted HubSpot feasibility probes and a production backend foundation. The backend provides internal Tenant and Platform Connection identity, module entitlements, HubSpot OAuth installation, encrypted refresh-credential lifecycle, on-demand token refresh, an internal uninstall capability, explicit one-Deal baseline synchronization, authenticated HubSpot webhook ingestion, deterministic PostgreSQL-backed processing of immutable Line Item signals into audit history and a derived latest projection, and a disabled-by-default signed Deal-scoped audit read API for the future App Card. Scheduled reconciliation and the Line Item Watch UI are not implemented yet.
+The repository contains the accepted HubSpot feasibility probes, a production backend foundation, and the first HubSpot Deal App Card. The backend provides internal Tenant and Platform Connection identity, module entitlements, HubSpot OAuth installation, encrypted refresh-credential lifecycle, on-demand token refresh, an internal uninstall capability, explicit one-Deal baseline synchronization, authenticated HubSpot webhook ingestion, deterministic PostgreSQL-backed processing of immutable Line Item signals into audit history and a derived latest projection, and a disabled-by-default signed Deal-scoped audit read API. The Deal-only card renders that retained state and recent history with independent cursor pagination and English/Hungarian localization. Scheduled reconciliation is not implemented yet.
 
 ## Backend foundation
 
@@ -26,6 +26,20 @@ Webhook receipt is disabled by default. Enabling it requires `HUBSPOT_WEBHOOK_EN
 
 The Deal audit endpoint is also disabled by default. Enabling it requires `HUBSPOT_UI_EXTENSION_ENABLED=true`, the exact public HTTPS origin in `HUBSPOT_UI_EXTENSION_PUBLIC_BASE_URI`, and the numeric HubSpot app ID in `HUBSPOT_UI_EXTENSION_APP_ID`. It validates HubSpot v3 signed fetch requests and serves only local Tenant/connection-scoped projection data; it never calls HubSpot. See [ADR 0008](docs/adr/0008-deal-scoped-audit-read-boundary.md).
 
+## Deal App Card
+
+The first frontend package is under `src/app/cards`. It uses only React and `@hubspot/ui-extensions`, calls the P.6 endpoint only through `hubspot.fetch`, and does not call HubSpot CRM APIs or mutate CRM records. Configure `LINE_ITEM_WATCH_API_ORIGIN` as an origin-only HTTPS HubSpot project-profile variable; the same variable supplies the runtime origin and the exact permitted fetch prefix. Do not commit a real environment origin to the app manifest.
+
+```sh
+cd src/app/cards
+npm ci
+npm run typecheck
+npm run lint
+npm test
+```
+
+HubSpot project validation is profile-dependent. Create/select a profile with the required variable before running `hs project validate --profile <name>`. Validation is read-only; upload, deploy, and live portal acceptance remain separate authorized operations. See [Deal App Card architecture and operations](docs/architecture/deal-app-card.md).
+
 ## Project documentation
 
 - [Product overview](docs/business/product-overview.md)
@@ -35,6 +49,7 @@ The Deal audit endpoint is also disabled by default. Enabling it requires `HUBSP
 - [Modularity](docs/architecture/modularity.md)
 - [Provider integration](docs/architecture/provider-integration.md)
 - [Deal audit API](docs/architecture/deal-audit-api.md)
+- [Deal App Card architecture and operations](docs/architecture/deal-app-card.md)
 - [Local development](docs/development/local-development.md)
 - [Adding a Product Module or provider](docs/development/adding-a-module.md)
 - [Security overview](docs/trust/security-overview.md)

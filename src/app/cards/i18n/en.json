@@ -1,0 +1,133 @@
+{
+  "errors": {
+    "INVALID_REQUEST": {
+      "title": "This request is not valid",
+      "description": "The Deal audit request could not be understood.",
+      "action": "Refresh the Deal and try again."
+    },
+    "AUTHENTICATION_FAILED": {
+      "title": "Line Item Watch could not authenticate",
+      "description": "HubSpot could not authorize this audit request.",
+      "action": "Refresh the Deal. If the problem continues, reconnect the app."
+    },
+    "ACCOUNT_UNAVAILABLE": {
+      "title": "Line Item Watch is unavailable for this account",
+      "description": "The account is not currently able to use Deal audit history.",
+      "action": "Ask an administrator to check the app connection and entitlement."
+    },
+    "SERVICE_UNAVAILABLE": {
+      "title": "Audit history is temporarily unavailable",
+      "description": "Line Item Watch could not reach its audit store.",
+      "action": "Try again in a few moments."
+    },
+    "INTERNAL_ERROR": {
+      "title": "Audit history could not be loaded",
+      "description": "Line Item Watch encountered an unexpected problem.",
+      "action": "Try again. If the problem continues, share the reference with support."
+    },
+    "NETWORK": {
+      "title": "Could not connect to Line Item Watch",
+      "description": "The audit request did not reach the service.",
+      "action": "Check your connection and try again."
+    },
+    "TIMEOUT": {
+      "title": "The audit request timed out",
+      "description": "Line Item Watch did not respond in time.",
+      "action": "Try again in a moment."
+    },
+    "RATE_LIMITED": {
+      "title": "Too many audit requests",
+      "description": "Line Item Watch is temporarily limiting requests.",
+      "action": "Wait a moment, then try again."
+    },
+    "MALFORMED_RESPONSE": {
+      "title": "Audit history could not be displayed",
+      "description": "The service returned data that this card cannot safely display.",
+      "action": "Try again. If the problem continues, contact support."
+    },
+    "LOCAL_CONFIGURATION": {
+      "title": "Line Item Watch is not configured",
+      "description": "The API origin is missing or invalid for this HubSpot project profile.",
+      "action": "Ask an administrator to configure LINE_ITEM_WATCH_API_ORIGIN."
+    },
+    "LOCAL_CONTEXT": {
+      "title": "This Deal could not be identified",
+      "description": "HubSpot did not provide a valid Deal identifier to the card.",
+      "action": "Refresh the Deal and reopen the card."
+    }
+  },
+  "fields": {
+    "name": "Name",
+    "quantity": "Quantity",
+    "unitPrice": "Unit price",
+    "unitDiscount": "Unit discount",
+    "discountPercentage": "Discount percentage",
+    "billingFrequency": "Billing frequency",
+    "billingStartDate": "Billing start date",
+    "billingStartDelayDays": "Billing start delay (days)",
+    "billingStartDelayMonths": "Billing start delay (months)",
+    "billingPeriod": "Billing period"
+  },
+  "events": {
+    "CREATED": "Line item created",
+    "PROPERTY_CHANGED": "Property changed",
+    "DEAL_ASSOCIATED": "Associated with this Deal",
+    "DEAL_DISASSOCIATED": "Disassociated from this Deal",
+    "DELETED": "Line item deleted"
+  },
+  "valueStates": {
+    "UNKNOWN": "Unknown",
+    "ABSENT": "No value",
+    "PRESENT": "Present",
+    "VALUE": "Value"
+  },
+  "membership": {
+    "PRESENT": "Currently associated",
+    "ABSENT": "Not currently associated",
+    "UNKNOWN": "Current association is unknown",
+    "NOT_APPLICABLE": "Deleted",
+    "atDeletion": "Association at deletion: {value}"
+  },
+  "historyCoverage": {
+    "BASELINE_ANCHORED": "History begins with a complete observed baseline on {date}.",
+    "SIGNAL_FIRST": "History begins with the earliest retained change evidence on {date}.",
+    "unknownState": "Some current values are unknown.",
+    "disclaimer": "The observation date does not guarantee that every provider change was captured."
+  },
+  "common": {
+    "title": "Line Item Watch",
+    "intro": "Retained Line Item state and recent changes for this Deal.",
+    "lineItems": "Line items",
+    "recentChanges": "Recent changes",
+    "unnamedLineItem": "Unnamed Line Item",
+    "deleted": "Deleted",
+    "deletedAt": "Deleted {date}",
+    "commercialDetails": "Commercial details",
+    "billingDetails": "Billing details",
+    "loadMoreLineItems": "Load more line items",
+    "loadMoreEvents": "Load more changes",
+    "retry": "Try again",
+    "copyReference": "Copy reference",
+    "reference": "Reference: {value}",
+    "noHistoryTitle": "No audit history yet",
+    "noHistoryDescription": "Line Item Watch has no retained history for this Deal.",
+    "noLineItemsTitle": "No retained line items",
+    "noLineItemsDescription": "No relevant Line Item state is currently retained for this Deal.",
+    "noEventsTitle": "No recent changes",
+    "noEventsDescription": "No retained change events are available for this Deal.",
+    "initialLoading": "Loading Deal audit history",
+    "lineItemsLoading": "Loading more line items",
+    "eventsLoading": "Loading more changes",
+    "paginationErrorTitle": "More results could not be loaded",
+    "paginationErrorDescription": "The results already shown are unchanged. Try loading this section again.",
+    "lineItemReference": "Line Item {value}",
+    "lineItemName": "Line Item: {value}",
+    "changedField": "Changed field: {value}",
+    "before": "Before",
+    "after": "After",
+    "truncated": "This value was shortened by the audit service.",
+    "unavailable": "Information unavailable.",
+    "days": { "one": "{value} day", "other": "{value} days" },
+    "months": { "one": "{value} month", "other": "{value} months" }
+  }
+}

@@ -23,7 +23,7 @@ Only the signed HubSpot account and configured app boundary are trusted. The ser
 
 The response reads only local semantic audit and derived latest projection tables. It makes no provider call. Line Items remain relevant when they are currently associated, appeared in a complete historical checkpoint, or have retained post-boundary semantic Deal context. Disassociation and deletion therefore do not erase history.
 
-Line Items and events are independent keyset-paged sections. Each has its own limit and opaque versioned cursor; a zero limit skips that section. Limits are capped at 20. Requested sections execute in one read-only `REPEATABLE_READ` transaction, but later cursor requests are new transactions and do not promise a cross-request snapshot.
+Line Items and events are independent keyset-paged sections. Each has its own limit and opaque versioned cursor; a zero limit skips that section. Limits are capped at 20. Requested sections execute in one application-level read-only `REPEATABLE_READ` transaction, but the PostgreSQL transaction is not marked database read-only because authorization guards acquire shared row locks. Later cursor requests are new transactions and do not promise a cross-request snapshot.
 
 Every Line Item includes explicit property states and:
 

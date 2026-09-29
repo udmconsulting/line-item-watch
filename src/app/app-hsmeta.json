@@ -18,7 +18,7 @@
       "conditionallyRequiredScopes": []
     },
     "permittedUrls": {
-      "fetch": ["https://api.hubapi.com"],
+      "fetch": ["${LINE_ITEM_WATCH_API_ORIGIN}/api/v1/line-item-watch/deals/"],
       "iframe": [],
       "img": []
     },

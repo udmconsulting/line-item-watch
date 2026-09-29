@@ -1,0 +1,11 @@
+{
+  "uid": "line_item_watch_deal_card",
+  "type": "card",
+  "config": {
+    "name": "Line Item Watch",
+    "description": "Review retained Line Item history for this Deal.",
+    "entrypoint": "/app/cards/LineItemWatchDealCard.tsx",
+    "location": "crm.record.tab",
+    "objectTypes": ["DEALS"]
+  }
+}
