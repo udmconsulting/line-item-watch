@@ -107,7 +107,7 @@ class HubSpotDealAuditReadServiceTest {
     }
 
     @Test
-    void readsBothSectionsInsideOneReadOnlyRepeatableReadTransaction() throws Exception {
+    void readsBothSectionsInsideOneLockCapableRepeatableReadTransaction() throws Exception {
         Transactional transaction = HubSpotDealAuditReadService.class
                 .getDeclaredMethod(
                         "read",
@@ -117,7 +117,7 @@ class HubSpotDealAuditReadServiceTest {
                 .getAnnotation(Transactional.class);
 
         assertThat(transaction).isNotNull();
-        assertThat(transaction.readOnly()).isTrue();
+        assertThat(transaction.readOnly()).isFalse();
         assertThat(transaction.isolation()).isEqualTo(Isolation.REPEATABLE_READ);
     }
 

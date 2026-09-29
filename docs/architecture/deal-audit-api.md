@@ -21,7 +21,7 @@ Serving this API makes zero HubSpot/provider calls. A valid, entitled account re
 
 At least one limit must be greater than zero. Cursors are opaque, versioned, section-specific, and bound to the requested Deal. Line Items use external Line Item ID ascending order. Events use `(occurredAt DESC, semanticKey DESC)`, so equal timestamps remain deterministic. No query uses `OFFSET`.
 
-Both requested page domains run in one read-only repeatable-read transaction. A later request using either cursor starts a new transaction; the API does not promise snapshot consistency across pagination requests while new history is arriving.
+Both requested page domains run in one repeatable-read transaction. The endpoint is application-level read-only, but its PostgreSQL transaction is intentionally not marked read-only because authorization revalidation acquires shared row locks on the Platform Connection and entitlement. A later request using either cursor starts a new transaction; the API does not promise snapshot consistency across pagination requests while new history is arriving.
 
 Each property/event value is truncated to at most 512 Unicode code points and reports `truncated=true` when shortened. Both sections are capped at 20 items, keeping the response bounded for a HubSpot UI-extension fetch.
 
