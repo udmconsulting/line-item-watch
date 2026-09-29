@@ -37,7 +37,7 @@ class HubSpotDealAuditReadService {
         this.readDealAudit = readDealAudit;
     }
 
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     DealAuditView read(
             AuthenticatedHubSpotUiCaller caller,
             DealAuditQueryFactory.QueryInput input,
