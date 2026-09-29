@@ -73,6 +73,82 @@ HUBSPOT_UI_EXTENSION_APP_ID=<numeric-app-id>
 
 The base URI must be an origin only: no path, user info, query, or fragment. The endpoint is `GET /api/v1/line-item-watch/deals/{dealId}/audit`. It is not a local shared-secret API and cannot be called successfully without a current HubSpot v3 signature over the configured public URI and signed metadata. Do not use `Host` or forwarding headers as signature configuration. No CORS wildcard, cookie credential, provider lookup, or local rate limiter is introduced; production edge controls remain deployment work.
 
+### Deal App Card profile configuration
+
+The app manifest and card runtime both reference the HubSpot project-profile variable `LINE_ITEM_WATCH_API_ORIGIN`. Its value must exactly match `HUBSPOT_UI_EXTENSION_PUBLIC_BASE_URI`: a canonical HTTPS origin with no trailing slash, path, credentials, query, fragment, or environment-specific API path. Create a local project profile with `hs project profile add <name> --target-account <account-id>`, then add the variable to `src/hsprofile.<name>.json`:
+
+```json
+{
+  "accountId": 123456,
+  "variables": {
+    "LINE_ITEM_WATCH_API_ORIGIN": "https://<exact-public-origin>"
+  }
+}
+```
+
+The numeric account ID and origin above are structural examples only. Use an approved account and reachable environment origin, keep environment profile files out of commits unless their values are intentionally public, and never put credentials in profile variables. The manifest permits only `${LINE_ITEM_WATCH_API_ORIGIN}/api/v1/line-item-watch/deals/`; the card appends the validated Deal ID and `/audit`. For local UI development, use the HubSpot CLI's HTTPS-origin proxy mapping rather than weakening the manifest to permit localhost.
+
+Install and verify the isolated frontend package from `src/app/cards` with `npm ci`, `npm run typecheck`, `npm run lint`, and `npm test`. Run `hs project lint` from the repository root. Run `hs project validate --profile <name>` only when that profile exists and contains the variable. Neither command uploads or deploys the project.
+
+### Temporary Deal App Card live-acceptance runbook
+
+This workflow is for explicitly authorized acceptance in an isolated HubSpot account. It is not a production hosting design. A Cloudflare quick tunnel has a temporary hostname that can change every time it starts; never commit that hostname or use the tunnel as a permanent deployment target.
+
+1. Confirm the local PostgreSQL runtime and the required HubSpot OAuth and credential-encryption configuration are already available. Start the backend or allow startup migrations only with explicit authorization. The P.6 application flow is externally read-only, but its PostgreSQL `REPEATABLE_READ` transaction must not be marked database read-only because connection and entitlement validation acquires shared row locks. That lock capability protects authorization state; it does not turn the endpoint into a business-data write.
+2. Start the temporary public origin and retain its generated HTTPS hostname:
+
+   ```sh
+   cloudflared tunnel --url http://127.0.0.1:8080
+   ```
+
+3. Create the ignored `src/hsprofile.acceptance.json` locally. It contains no credential; the repository's `/src/hsprofile.*.json` rule keeps it untracked.
+
+   ```json
+   {
+     "accountId": "<TEST_ACCOUNT_ID>",
+     "variables": {
+       "LINE_ITEM_WATCH_API_ORIGIN": "https://<TEMPORARY_HOST>"
+     }
+   }
+   ```
+
+4. Start the backend from the repository root with the same canonical origin. Existing local profile configuration must separately supply the OAuth client secret and credential-encryption key; do not put either in the HubSpot project profile.
+
+   ```sh
+   SPRING_PROFILES_ACTIVE=local \
+   HUBSPOT_UI_EXTENSION_ENABLED=true \
+   HUBSPOT_UI_EXTENSION_APP_ID=<APP_ID> \
+   HUBSPOT_UI_EXTENSION_PUBLIC_BASE_URI=https://<TEMPORARY_HOST> \
+   ./backend/mvnw -f backend/pom.xml spring-boot:run
+   ```
+
+   `LINE_ITEM_WATCH_API_ORIGIN` and `HUBSPOT_UI_EXTENSION_PUBLIC_BASE_URI` must resolve to the same canonical HTTPS origin, without a path, query, fragment, credentials, or trailing slash.
+
+5. Check local health without disclosing configuration:
+
+   ```sh
+   curl http://127.0.0.1:8080/actuator/health
+   ```
+
+6. Validate the resolved project before any upload:
+
+   ```sh
+   hs project validate --profile=acceptance
+   ```
+
+   Validation is read-only. Upload/deployment is a separate HubSpot mutation and requires explicit authorization:
+
+   ```sh
+   hs project upload --profile=acceptance
+   ```
+
+   HubSpot project upload auto-deploys the resulting build. A changed tunnel hostname changes the resolved `permittedUrls.fetch` value, so it requires another validation and separately authorized upload; editing only the ignored profile cannot update an already deployed build.
+
+7. If the card is not already placed, the conceptual HubSpot path is **Settings → Data Management → Objects → Deals → Record Customization → Default view → Add middle-column card → Card library → Line Item Watch**. Layout placement is a HubSpot mutation and also requires explicit authorization.
+8. Perform the manual checks in [Testing](testing.md). Do not change CRM records merely to manufacture audit events or pagination volume.
+
+After acceptance, choose the HubSpot cleanup or rollback outcome before stopping infrastructure: a deployed build that still permits and calls the quick-tunnel origin will point to a dead hostname after the tunnel stops. Once that decision is intentional and authorized, stop the backend and `cloudflared`, remove the ignored `src/hsprofile.acceptance.json`, and verify with `git status --short` and `git ls-files src/hsprofile.acceptance.json` that no acceptance profile or origin became tracked. Removing the local profile alone does not change the deployed HubSpot build.
+
 Run the complete backend verification suite with Docker available:
 
 ```sh
@@ -96,7 +172,7 @@ git diff --check
 
 The feasibility probes and their required environment variables are documented under [technical feasibility evidence](../../README.md#technical-feasibility-evidence). They made live provider reads during the accepted spike and are not routine P.0 checks. Do not run them without an approved test account and explicit reason; never store or print the access token.
 
-The HubSpot app component is configured under `src/app`, but the HubSpot CLI workflow has not been locally verified in this repository. Add commands here only after testing them. HubSpot project validation/upload/deployment must never be conflated: validation may be used when available and non-destructive; upload or deployment requires explicit authorization.
+The HubSpot app component is configured under `src/app`. HubSpot project validation/upload/deployment must never be conflated: validation is non-destructive, while upload auto-deploys a build and requires explicit authorization.
 
 ## Required reading before implementation
 

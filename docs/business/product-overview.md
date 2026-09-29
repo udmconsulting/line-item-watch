@@ -32,4 +32,4 @@ Product-market fit, willingness to pay, pricing, onboarding conversion, customer
 
 ## Current status
 
-The Platform Core foundation, HubSpot OAuth lifecycle, baseline/checkpoint persistence, authenticated webhook capture, provider-free signal processing, semantic audit reconstruction, deletion freeze, and sparse latest projection are implemented. The worker remains disabled by default. Recurring reconciliation, customer-facing recovery/administration, production operations, and the Deal UI are not yet implemented.
+The Platform Core foundation, HubSpot OAuth lifecycle, baseline/checkpoint persistence, authenticated webhook capture, provider-free signal processing, semantic audit reconstruction, deletion freeze, sparse latest projection, signed Deal audit read boundary, and Deal App Card are implemented. The worker and read endpoint remain disabled by default. Recurring reconciliation, customer-facing recovery/administration, production operations, and live App Card acceptance are not yet implemented.

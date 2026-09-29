@@ -2,7 +2,7 @@
 
 ## Status legend
 
-- **Exists today:** HubSpot app project metadata, accepted feasibility probes, the Java/PostgreSQL Platform Core, HubSpot OAuth installation/credential lifecycle, the one-Deal `LINE_ITEM_WATCH` checkpoint slice, authenticated durable HubSpot Line Item webhook capture, provider-free signal/audit projection, a disabled-by-default signed Deal audit read API, shared supportability, and Platform activity auditing under `backend/`.
+- **Exists today:** HubSpot app project metadata, a Deal-only Line Item Watch App Card, accepted feasibility probes, the Java/PostgreSQL Platform Core, HubSpot OAuth installation/credential lifecycle, the one-Deal `LINE_ITEM_WATCH` checkpoint slice, authenticated durable HubSpot Line Item webhook capture, provider-free signal/audit projection, a disabled-by-default signed Deal audit read API, shared supportability, and Platform activity auditing under `backend/`.
 - **Target Beta:** required architecture direction; not yet implemented.
 - **TBD:** an implementation decision intentionally deferred until the relevant feature or infrastructure task.
 
@@ -32,6 +32,7 @@ Product Modules
   LINE_ITEM_WATCH checkpoints/signals      [implemented]
   audit reconstruction/deletion handling  [implemented]
   Deal-scoped audit query/read model       [implemented]
+  Deal App Card                             [implemented; profile-configured]
         |
         v
 Module-owned checkpoint/audit persistence  [implemented]
@@ -67,4 +68,4 @@ Customer ownership is never inferred from an external business-object ID. Provid
 
 The single Spring Boot application under `backend/` implements Tenant identity, Platform Connections with `ACTIVE`, `REAUTH_REQUIRED`, and `DISCONNECTED` lifecycle states, Product Module identity, entitlements, encrypted connection credentials, OAuth state, HubSpot install/callback, on-demand refresh, service-only uninstall, one explicitly invoked Deal observation synchronization, a conditional authenticated HubSpot webhook receiver, an independently conditional signal worker, shared supportability, and committed connection/entitlement activity auditing. HubSpot code is isolated under `integrations.hubspot`; shared credential lifecycle and activity audit remain in Platform Core. `modules.lineitemwatch` owns normalized complete checkpoints, immutable signals, pure reconstruction, semantic audits, and atomic PostgreSQL projection writes. Technical logs, Platform activity rows, and Product Module semantic audit events are distinct records.
 
-`BASELINE` is the immutable first complete provider observation. `OBSERVED` is the replaceable latest complete provider checkpoint. `LATEST` is a sparse derived projection and has one writer: the shared reconstruction repository used after both P.3 observation and P.5 signal processing. Signal processing and Deal audit reads perform no provider reads. The audit endpoint resolves only a cryptographically authenticated provider account into Tenant/connection scope; its Deal ID remains an untrusted selector within that scope. No public baseline/recovery endpoint, account-wide scan, recurring reconciliation, access-token cache, refresh coalescing, public disconnect API, Line Item Watch UI, physical API/worker split, production deployment, or production observability vendor integration exists yet. Controlled P.4 genuine-delivery acceptance is complete; production target details are intentionally not represented in repository configuration.
+`BASELINE` is the immutable first complete provider observation. `OBSERVED` is the replaceable latest complete provider checkpoint. `LATEST` is a sparse derived projection and has one writer: the shared reconstruction repository used after both P.3 observation and P.5 signal processing. Signal processing and Deal audit reads perform no provider reads. The audit endpoint resolves only a cryptographically authenticated provider account into Tenant/connection scope; its Deal ID remains an untrusted selector within that scope. The Deal App Card uses that endpoint through signed `hubspot.fetch` only and performs no CRM write. No public baseline/recovery endpoint, account-wide scan, recurring reconciliation, access-token cache, refresh coalescing, public disconnect API, physical API/worker split, production deployment, or production observability vendor integration exists yet. Controlled P.4 genuine-delivery acceptance is complete; production target details are intentionally not represented in repository configuration.
