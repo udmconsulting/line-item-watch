@@ -131,7 +131,7 @@ for (const [locale, bundle] of Object.entries({ en, hu })) {
   assertSame(
     `${locale} history coverage`,
     Object.keys(bundle.historyCoverage),
-    [...coverageModes, "unknownState", "disclaimer"],
+    [...coverageModes, "unknownState", "disclaimer", "retentionLimited"],
   );
   assertSame(`${locale} error codes`, Object.keys(bundle.errors), [
     ...publicErrors,

@@ -142,6 +142,35 @@ describe("Deal audit contract validation", () => {
       }),
     ],
     [
+      "gap state without a start timestamp",
+      () => ({
+        ...response(),
+        reliability: {
+          ...response().reliability,
+          coverageState: "POSSIBLE_GAP",
+          possibleGapSince: null,
+        },
+      }),
+    ],
+    [
+      "retained boundary before the observation boundary",
+      () => ({
+        ...response(),
+        lineItems: {
+          ...response().lineItems,
+          items: [
+            {
+              ...response().lineItems.items[0],
+              historyCoverage: {
+                ...response().lineItems.items[0]?.historyCoverage,
+                retainedFrom: "2026-09-27T10:00:00Z",
+              },
+            },
+          ],
+        },
+      }),
+    ],
+    [
       "invalid lifecycle transition",
       () => ({
         ...response(),

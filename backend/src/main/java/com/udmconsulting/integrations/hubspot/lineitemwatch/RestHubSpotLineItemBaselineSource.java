@@ -6,6 +6,8 @@ import com.udmconsulting.modules.lineitemwatch.application.BaselineSyncException
 import com.udmconsulting.modules.lineitemwatch.application.BaselineSyncFailure;
 import com.udmconsulting.modules.lineitemwatch.application.DealLineItemObservations;
 import com.udmconsulting.modules.lineitemwatch.application.LineItemBaselineSource;
+import com.udmconsulting.modules.lineitemwatch.application.LineItemReconciliationSource;
+import com.udmconsulting.modules.lineitemwatch.application.LineItemReconciliationSource.ReconciliationObservation;
 import com.udmconsulting.modules.lineitemwatch.domain.BillingStart;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemObservation;
 import com.udmconsulting.modules.lineitemwatch.domain.ProviderObjectId;
@@ -13,6 +15,7 @@ import com.udmconsulting.modules.lineitemwatch.domain.RecurringPeriod;
 import com.udmconsulting.platform.connection.domain.PlatformConnection;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -35,7 +38,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @Component
-public final class RestHubSpotLineItemBaselineSource implements LineItemBaselineSource {
+public final class RestHubSpotLineItemBaselineSource
+        implements LineItemBaselineSource, LineItemReconciliationSource {
 
     static final String DEAL_PATH = "/crm/objects/2026-09/deals/%s";
     static final String LINE_ITEM_PATH = "/crm/objects/2026-09/line_items/%s";
@@ -58,7 +62,8 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
-    private final Function<PlatformConnection, String> accessTokenResolver;
+    private final Function<PlatformConnection, HubSpotAccessTokenProvider.TransientAccessGrant>
+            accessGrantResolver;
     private final Clock clock;
 
     @Autowired
@@ -70,8 +75,7 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
             Clock clock) {
         this.restClient = restClientBuilder.baseUrl(properties.apiBaseUrl().toString()).build();
         this.objectMapper = objectMapper;
-        this.accessTokenResolver = connection ->
-                accessTokenProvider.accessTokenFor(connection).accessToken();
+        this.accessGrantResolver = accessTokenProvider::accessTokenFor;
         this.clock = clock;
     }
 
@@ -83,14 +87,29 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
             Clock clock) {
         this.restClient = restClientBuilder.baseUrl(properties.apiBaseUrl().toString()).build();
         this.objectMapper = objectMapper;
-        this.accessTokenResolver = accessTokenResolver;
+        this.accessGrantResolver = connection ->
+                new HubSpotAccessTokenProvider.TransientAccessGrant(
+                        accessTokenResolver.apply(connection), connection.id(), -1);
         this.clock = clock;
     }
 
     @Override
     public DealLineItemObservations readDeal(
             PlatformConnection connection, ProviderObjectId dealId) {
-        String accessToken = accessTokenResolver.apply(connection);
+        return readDealForReconciliation(connection, dealId).observations();
+    }
+
+    @Override
+    public ReconciliationObservation readDealCurrent(
+            PlatformConnection connection, ProviderObjectId dealId) {
+        return readDealForReconciliation(connection, dealId);
+    }
+
+    private ReconciliationObservation readDealForReconciliation(
+            PlatformConnection connection, ProviderObjectId dealId) {
+        HubSpotAccessTokenProvider.TransientAccessGrant grant =
+                accessGrantResolver.apply(connection);
+        String accessToken = grant.accessToken();
         JsonNode deal = get(
                 DEAL_PATH.formatted(pathSegment(dealId.value())),
                 accessToken,
@@ -117,7 +136,9 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
             }
             observations.add(toObservation(lineItem, lineItemId, dealIds));
         }
-        return new DealLineItemObservations(dealId, observations);
+        return new ReconciliationObservation(
+                new DealLineItemObservations(dealId, observations),
+                grant.expectedCredentialGeneration());
     }
 
     private JsonNode get(
@@ -137,7 +158,7 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
                         if (status == 404) {
                             throw new BaselineSyncException(notFoundFailure);
                         }
-                        throw classify(status);
+                        throw classify(status, response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER));
                     });
         } catch (ResourceAccessException exception) {
             throw new BaselineSyncException(BaselineSyncFailure.PROVIDER_UNAVAILABLE);
@@ -213,7 +234,7 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
                             throw new BaselineSyncException(
                                     BaselineSyncFailure.PROVIDER_STATE_CHANGED);
                         }
-                        throw classify(status);
+                        throw classify(status, response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER));
                     });
         } catch (ResourceAccessException exception) {
             throw new BaselineSyncException(BaselineSyncFailure.PROVIDER_UNAVAILABLE);
@@ -339,15 +360,37 @@ public final class RestHubSpotLineItemBaselineSource implements LineItemBaseline
         }
     }
 
-    private static RuntimeException classify(int status) {
+    private RuntimeException classify(int status, String retryAfter) {
         if (status == 401 || status == 403) {
             return new BaselineSyncException(
                     BaselineSyncFailure.PROVIDER_AUTHORIZATION_REJECTED);
         }
         if (status == 429 || status >= 500) {
-            return new BaselineSyncException(BaselineSyncFailure.PROVIDER_UNAVAILABLE);
+            return new BaselineSyncException(
+                    BaselineSyncFailure.PROVIDER_UNAVAILABLE,
+                    status == 429 ? retryAfter(retryAfter) : null);
         }
         return contractFailure();
+    }
+
+    private Duration retryAfter(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            long seconds = Long.parseLong(value.trim());
+            return seconds > 0 ? Duration.ofSeconds(seconds) : null;
+        } catch (NumberFormatException ignored) {
+            try {
+                Instant at = java.time.ZonedDateTime.parse(
+                                value.trim(), java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
+                        .toInstant();
+                Duration delay = Duration.between(clock.instant(), at);
+                return delay.isPositive() ? delay : null;
+            } catch (DateTimeParseException invalidDate) {
+                return null;
+            }
+        }
     }
 
     private static BigDecimal optionalDecimal(JsonNode object, String field) {

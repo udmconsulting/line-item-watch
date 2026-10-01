@@ -31,7 +31,8 @@ public final class ReadDealAudit {
                 .toList();
         return new DealAuditView(
                 new DealAuditView.Page<>(items, storedItems.hasMore()),
-                new DealAuditView.Page<>(storedEvents.items(), storedEvents.hasMore()));
+                new DealAuditView.Page<>(storedEvents.items(), storedEvents.hasMore()),
+                repository.readReliability(query));
     }
 
     private static DealAuditView.LineItemSummary summary(
@@ -56,7 +57,9 @@ public final class ReadDealAudit {
                 new DealAuditView.HistoryCoverage(
                         stored.historyCoverage().mode(),
                         stored.historyCoverage().observedFrom(),
-                        hasUnknownState));
+                        hasUnknownState,
+                        stored.retainedFrom(),
+                        stored.retentionLimited()));
     }
 
     private static DealAuditView.Membership membership(

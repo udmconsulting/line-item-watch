@@ -14,6 +14,20 @@ P.4 tests use only a synthetic HTTPS target, client secret, clock, IDs, and payl
 
 P.5 unit tests cover baseline-first and signal-first reconstruction, explicit `UNKNOWN`, out-of-order replay, sparse known properties, same-timestamp lifecycle precedence, ambiguous equal-time property values, association transition collapse, opposite transitions, and deletion freeze. PostgreSQL 18.6 tests cover migration/constraints, the single shared P.3/P.5 LATEST writer, late-signal repair, audit/source/Deal-context projection, raw-evidence deletion without audit loss, `SKIP LOCKED` claims, per-Line-Item serialization, stale leases, bounded/terminal failure isolation, and transaction rollback/reclaim. ArchUnit continues to prove that module processing cannot depend on the HubSpot integration.
 
+P.8 adds PostgreSQL 18.6 coverage for observation-period close/reopen and
+persistent gaps, tracked-scope scheduled reconciliation, operation lease
+recovery, credential-generation and provider-timestamp conflict guards, drift
+repair without synthetic history, compare-and-set terminal-signal requeue and
+ordering, replay insufficiency rollback, verified replay anchors,
+anchor-watermark retention, semantic-history independence, and Tenant
+isolation. Frontend contract and card tests cover reliability invariants,
+retained boundaries, combined degraded warnings, and English/Hungarian copy.
+Controlled P.8 live acceptance passed against retained developer-test data for
+migration `009`, tracked-scope no-drift reconciliation, provider-free
+idempotent replay, replay-anchor integrity, the additive signed API, and bounded
+metrics/privacy. Retention was preview-only and no CRM or HubSpot mutation was
+performed.
+
 P.6 tests cover canonical-origin and app configuration, strict signed metadata and request shape, signature/query tampering, host/forwarding-header exclusion, account/connection/entitlement resolution, enumeration-safe failures, independent bounded cursors and zero-limit section skips, stable product fields, explicit value states, Unicode-safe truncation, localization-neutral errors and sanitized correlation logging, the lock-capable repeatable-read declaration, and a bounded worst-case response. PostgreSQL 18.6 tests exercise the real shared-lock authorization path before a mutation-free Deal audit read, run migration 006 both fresh and as an upgrade from populated migration 005 state, enforce copied chronology against the parent event, verify baseline-anchored and signal-first evidence boundaries, exclude pre-boundary events, retain historical disassociation/deletion relevance, freeze membership before post-deletion cleanup, exercise same-timestamp keysets, and prove Tenant/connection isolation for identical Deal IDs. ArchUnit proves that the read adapter has no provider-read dependency.
 
 P.6.B tests cover server-owned correlation headers across success/error/OAuth/webhook outcomes, caller override rejection, P.6 body/header equality, MDC restoration and redispatch reuse, independent worker operation IDs, safe throwable diagnostics, closed public/provider/internal categories, bounded operation metric tags, and the machine-readable localization namespaces/error coverage/normalization vectors. PostgreSQL 18.6 tests cover migration 007, strict Tenant/connection ownership, truthful actors, install/reauthorization/reauthentication/disconnect/entitlement activity, idempotent no-ops, concurrent losing transitions, rollback in both directions, audit-insert failure, insert-only application access, and Tenant cascade. No live provider acceptance is part of P.6.B.

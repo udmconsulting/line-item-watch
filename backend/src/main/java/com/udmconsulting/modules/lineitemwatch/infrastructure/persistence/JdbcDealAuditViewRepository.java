@@ -3,6 +3,7 @@ package com.udmconsulting.modules.lineitemwatch.infrastructure.persistence;
 import com.udmconsulting.modules.lineitemwatch.application.DealAuditQuery;
 import com.udmconsulting.modules.lineitemwatch.application.DealAuditView;
 import com.udmconsulting.modules.lineitemwatch.application.DealAuditViewRepository;
+import com.udmconsulting.modules.lineitemwatch.application.LineItemReliability;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemAuditType;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemHistoryCoverage;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemPropertyValues;
@@ -83,6 +84,10 @@ class JdbcDealAuditViewRepository implements DealAuditViewRepository {
                 )
                 SELECT item.external_line_item_id,
                        latest.*,
+                       COALESCE(item_reliability.retained_from,
+                                latest.history_observed_from) AS retained_from,
+                       COALESCE(item_reliability.retention_limited, FALSE)
+                           AS retention_limited,
                        EXISTS (
                            SELECT 1
                            FROM line_item_watch_snapshot_deal current_deal
@@ -100,6 +105,10 @@ class JdbcDealAuditViewRepository implements DealAuditViewRepository {
                  AND latest.connection_id = item.connection_id
                  AND latest.line_item_id = item.id
                  AND latest.snapshot_kind = 'LATEST'
+                LEFT JOIN line_item_watch_line_item_reliability item_reliability
+                  ON item_reliability.tenant_id = item.tenant_id
+                 AND item_reliability.connection_id = item.connection_id
+                 AND item_reliability.line_item_id = item.id
                 LEFT JOIN LATERAL (
                     SELECT event.event_type
                     FROM line_item_watch_audit_event event
@@ -210,10 +219,16 @@ class JdbcDealAuditViewRepository implements DealAuditViewRepository {
                  AND coverage.connection_id = event.connection_id
                  AND coverage.line_item_id = event.line_item_id
                  AND coverage.snapshot_kind = 'LATEST'
+                LEFT JOIN line_item_watch_line_item_reliability item_reliability
+                  ON item_reliability.tenant_id = coverage.tenant_id
+                 AND item_reliability.connection_id = coverage.connection_id
+                 AND item_reliability.line_item_id = coverage.line_item_id
                 WHERE context.tenant_id = ?
                   AND context.connection_id = ?
                   AND context.external_deal_id = ?
                   AND context.occurred_at >= coverage.history_observed_from
+                  AND context.occurred_at >= COALESCE(
+                      item_reliability.retained_from, coverage.history_observed_from)
                   %s
                   %s
                 ORDER BY context.occurred_at DESC, context.semantic_key DESC
@@ -239,6 +254,32 @@ class JdbcDealAuditViewRepository implements DealAuditViewRepository {
                 hasMore);
     }
 
+    @Override
+    public LineItemReliability readReliability(DealAuditQuery query) {
+        return jdbcTemplate.query("""
+                SELECT ingestion_state, coverage_state, possible_gap_since,
+                       last_signal_observed_at, last_successfully_processed_at,
+                       last_reconciled_at, reconciliation_outcome
+                FROM line_item_watch_reliability_state
+                WHERE tenant_id = ? AND connection_id = ?
+                """, result -> {
+                    if (!result.next()) {
+                        return LineItemReliability.unknown();
+                    }
+                    return new LineItemReliability(
+                            LineItemReliability.IngestionState.valueOf(
+                                    result.getString("ingestion_state")),
+                            LineItemReliability.CoverageState.valueOf(
+                                    result.getString("coverage_state")),
+                            instant(result.getTimestamp("possible_gap_since")),
+                            instant(result.getTimestamp("last_signal_observed_at")),
+                            instant(result.getTimestamp("last_successfully_processed_at")),
+                            instant(result.getTimestamp("last_reconciled_at")),
+                            LineItemReliability.ReconciliationOutcome.valueOf(
+                                    result.getString("reconciliation_outcome")));
+                }, query.tenantId().value(), query.connectionId().value());
+    }
+
     private static void addOwnerDeal(java.util.List<Object> arguments, DealAuditQuery query) {
         arguments.add(query.tenantId().value());
         arguments.add(query.connectionId().value());
@@ -260,7 +301,9 @@ class JdbcDealAuditViewRepository implements DealAuditViewRepository {
                 new LineItemHistoryCoverage(
                         LineItemHistoryCoverage.Mode.valueOf(
                                 row.getString("history_coverage_mode")),
-                        row.getTimestamp("history_observed_from").toInstant()));
+                        row.getTimestamp("history_observed_from").toInstant()),
+                row.getTimestamp("retained_from").toInstant(),
+                row.getBoolean("retention_limited"));
     }
 
     private static DealAuditView.AuditEvent event(ResultSet row, int ignored) throws SQLException {
@@ -365,6 +408,10 @@ class JdbcDealAuditViewRepository implements DealAuditViewRepository {
 
     private static java.time.Instant instant(ResultSet row, String column) throws SQLException {
         Timestamp value = row.getTimestamp(column);
+        return value == null ? null : value.toInstant();
+    }
+
+    private static java.time.Instant instant(Timestamp value) {
         return value == null ? null : value.toInstant();
     }
 }

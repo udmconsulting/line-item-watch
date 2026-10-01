@@ -2,6 +2,7 @@ package com.udmconsulting.platform.credential.infrastructure.persistence;
 
 import com.udmconsulting.platform.activity.application.ActivityContext;
 import com.udmconsulting.platform.activity.application.ApplicationActivityAudit;
+import com.udmconsulting.platform.activity.application.LifecycleTransitionObserver;
 import com.udmconsulting.platform.activity.domain.ActivityAction;
 import com.udmconsulting.platform.activity.domain.ActivityResourceType;
 import com.udmconsulting.platform.connection.domain.PlatformConnectionId;
@@ -11,8 +12,10 @@ import com.udmconsulting.platform.credential.domain.ConnectionCredential;
 import com.udmconsulting.platform.credential.domain.EncryptedSecret;
 import java.sql.Array;
 import java.sql.PreparedStatement;
+import java.time.Clock;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -25,11 +28,18 @@ public class JdbcConnectionCredentialStore implements ConnectionCredentialStore 
 
     private final JdbcTemplate jdbcTemplate;
     private final ApplicationActivityAudit activityAudit;
+    private final List<LifecycleTransitionObserver> lifecycleObservers;
+    private final Clock clock;
 
     public JdbcConnectionCredentialStore(
-            JdbcTemplate jdbcTemplate, ApplicationActivityAudit activityAudit) {
+            JdbcTemplate jdbcTemplate,
+            ApplicationActivityAudit activityAudit,
+            List<LifecycleTransitionObserver> lifecycleObservers,
+            Clock clock) {
         this.jdbcTemplate = jdbcTemplate;
         this.activityAudit = activityAudit;
+        this.lifecycleObservers = List.copyOf(lifecycleObservers);
+        this.clock = clock;
     }
 
     @Override
@@ -180,6 +190,12 @@ public class JdbcConnectionCredentialStore implements ConnectionCredentialStore 
                 connectionId.value().toString(),
                 current.status().name(),
                 resultingStatus.name());
+        lifecycleObservers.forEach(observer -> observer.connectionChanged(
+                new com.udmconsulting.platform.tenant.domain.TenantId(current.tenantId()),
+                connectionId,
+                current.status(),
+                resultingStatus,
+                clock.instant()));
         return true;
     }
 

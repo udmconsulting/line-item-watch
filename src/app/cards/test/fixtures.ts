@@ -58,6 +58,8 @@ export function lineItem(
       mode: "BASELINE_ANCHORED",
       observedFrom: "2026-09-28T10:00:00Z",
       hasUnknownState: false,
+      retainedFrom: "2026-09-28T10:00:00Z",
+      retentionLimited: false,
     },
     ...overrides,
   };
@@ -93,6 +95,15 @@ export function response(
 ): DealAuditResponse {
   return {
     dealId,
+    reliability: {
+      ingestionState: "OBSERVING",
+      coverageState: "NO_KNOWN_GAP",
+      possibleGapSince: null,
+      lastSignalObservedAt: "2026-09-28T10:05:00Z",
+      lastSuccessfullyProcessedAt: "2026-09-28T10:05:01Z",
+      lastReconciledAt: null,
+      reconciliationOutcome: "NOT_RUN",
+    },
     lineItems: { items: lineItems, page: lineItemsPage },
     events: { items: events, page: eventsPage },
   };

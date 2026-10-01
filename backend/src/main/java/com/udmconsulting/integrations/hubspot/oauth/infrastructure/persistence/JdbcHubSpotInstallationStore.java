@@ -3,6 +3,7 @@ package com.udmconsulting.integrations.hubspot.oauth.infrastructure.persistence;
 import com.udmconsulting.integrations.hubspot.oauth.application.HubSpotInstallationStore;
 import com.udmconsulting.platform.activity.application.ActivityContext;
 import com.udmconsulting.platform.activity.application.ApplicationActivityAudit;
+import com.udmconsulting.platform.activity.application.LifecycleTransitionObserver;
 import com.udmconsulting.platform.activity.domain.ActivityAction;
 import com.udmconsulting.platform.activity.domain.ActivityResourceType;
 import com.udmconsulting.platform.connection.domain.ConnectionStatus;
@@ -15,6 +16,7 @@ import com.udmconsulting.platform.credential.domain.EncryptedSecret;
 import com.udmconsulting.platform.tenant.domain.TenantId;
 import java.sql.Array;
 import java.sql.PreparedStatement;
+import java.time.Clock;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -31,14 +33,20 @@ public class JdbcHubSpotInstallationStore implements HubSpotInstallationStore {
     private final JdbcTemplate jdbcTemplate;
     private final SecretProtector secretProtector;
     private final ApplicationActivityAudit activityAudit;
+    private final List<LifecycleTransitionObserver> lifecycleObservers;
+    private final Clock clock;
 
     public JdbcHubSpotInstallationStore(
             JdbcTemplate jdbcTemplate,
             SecretProtector secretProtector,
-            ApplicationActivityAudit activityAudit) {
+            ApplicationActivityAudit activityAudit,
+            List<LifecycleTransitionObserver> lifecycleObservers,
+            Clock clock) {
         this.jdbcTemplate = jdbcTemplate;
         this.secretProtector = secretProtector;
         this.activityAudit = activityAudit;
+        this.lifecycleObservers = List.copyOf(lifecycleObservers);
+        this.clock = clock;
     }
 
     @Override
@@ -98,6 +106,16 @@ public class JdbcHubSpotInstallationStore implements HubSpotInstallationStore {
                     "LINE_ITEM_WATCH",
                     "DISABLED",
                     "ENABLED");
+        }
+        lifecycleObservers.forEach(observer -> observer.connectionChanged(
+                identity.tenantId(), identity.connectionId(), identity.previousStatus(),
+                ConnectionStatus.ACTIVE, clock.instant()));
+        if (entitlementInserted == 1) {
+            lifecycleObservers.forEach(observer -> observer.entitlementChanged(
+                    identity.tenantId(),
+                    com.udmconsulting.platform.module.domain.ProductModule.LINE_ITEM_WATCH,
+                    true,
+                    clock.instant()));
         }
         return new FinalizedInstallation(identity.tenantId(), identity.connectionId(), prior);
     }

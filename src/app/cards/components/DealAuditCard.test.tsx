@@ -80,6 +80,8 @@ describe("DealAuditCard", () => {
         mode: "SIGNAL_FIRST",
         observedFrom: "2026-09-28T10:00:00Z",
         hasUnknownState: true,
+        retainedFrom: "2026-09-28T10:00:00Z",
+        retentionLimited: false,
       },
     });
     const deletedItem = lineItem("2004", "Retired service", {
@@ -154,6 +156,66 @@ describe("DealAuditCard", () => {
     );
     expect(renderer.getRootNode().toString()).toContain("Mennyiség");
     expect(renderer.getRootNode().toString()).toContain("Jelenleg társítva");
+  });
+
+  it("shows truthful paused, gap, and degraded reconciliation warnings", async () => {
+    const degraded = {
+      ...response(),
+      reliability: {
+        ...response().reliability,
+        ingestionState: "PAUSED" as const,
+        coverageState: "POSSIBLE_GAP" as const,
+        possibleGapSince: "2026-09-29T10:00:00Z",
+        reconciliationOutcome: "UNAVAILABLE" as const,
+      },
+    };
+    const fetcher = vi.fn<Fetcher>().mockResolvedValue(jsonResponse(degraded));
+    const { renderer } = renderCard(fetcher);
+
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain(
+        "Audit reliability is limited",
+      ),
+    );
+    const text = renderer.getRootNode().toString();
+    expect(text).toContain("Monitoring is paused");
+    expect(text).toContain("historical gap");
+    expect(text).toContain("cannot recreate missing changes");
+    expect(text).toContain("verification is unavailable or conflicting");
+  });
+
+  it("localizes degraded reliability and the retained evidence boundary in Hungarian", async () => {
+    const limitedItem = lineItem("2002", "Support", {
+      historyCoverage: {
+        ...lineItem().historyCoverage,
+        retainedFrom: "2026-09-29T10:00:00Z",
+        retentionLimited: true,
+      },
+    });
+    const degraded = {
+      ...response([limitedItem]),
+      reliability: {
+        ...response().reliability,
+        ingestionState: "PAUSED" as const,
+        coverageState: "POSSIBLE_GAP" as const,
+        possibleGapSince: "2026-09-29T10:00:00Z",
+      },
+    };
+    const fetcher = vi.fn<Fetcher>().mockResolvedValue(jsonResponse(degraded));
+    const huContext: DealCardContext = {
+      ...context,
+      user: { ...context.user, language: "hu-HU", locale: "hu-HU" },
+    };
+    const { renderer } = renderCard(fetcher, huContext);
+
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain(
+        "Az audit megbízhatósága korlátozott",
+      ),
+    );
+    expect(renderer.getRootNode().toString()).toContain(
+      "A megőrzési szabályok miatt",
+    );
   });
 
   it("renders only safe localized error copy and a copyable body correlation ID", async () => {

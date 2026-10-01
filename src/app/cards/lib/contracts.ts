@@ -39,11 +39,24 @@ export const HISTORY_COVERAGE_MODES = [
   "SIGNAL_FIRST",
 ] as const;
 
+export const INGESTION_STATES = ["OBSERVING", "PAUSED"] as const;
+export const COVERAGE_STATES = ["NO_KNOWN_GAP", "POSSIBLE_GAP"] as const;
+export const RECONCILIATION_OUTCOMES = [
+  "NOT_RUN",
+  "SUCCEEDED",
+  "DRIFT_REPAIRED",
+  "UNAVAILABLE",
+  "CONFLICT",
+] as const;
+
 export type MonitoredProperty = (typeof MONITORED_PROPERTIES)[number];
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
 export type PublicErrorCode = (typeof PUBLIC_ERROR_CODES)[number];
 export type MembershipState = (typeof MEMBERSHIP_STATES)[number];
 export type HistoryCoverageMode = (typeof HISTORY_COVERAGE_MODES)[number];
+export type IngestionState = (typeof INGESTION_STATES)[number];
+export type CoverageState = (typeof COVERAGE_STATES)[number];
+export type ReconciliationOutcome = (typeof RECONCILIATION_OUTCOMES)[number];
 export type PropertyValueState = "UNKNOWN" | "ABSENT" | "VALUE";
 export type ObservedValueState = PropertyValueState | "PRESENT";
 
@@ -70,6 +83,8 @@ export interface LineItemSummary {
     readonly mode: HistoryCoverageMode;
     readonly observedFrom: string;
     readonly hasUnknownState: boolean;
+    readonly retainedFrom: string;
+    readonly retentionLimited: boolean;
   };
 }
 
@@ -93,6 +108,15 @@ export interface Page {
 
 export interface DealAuditResponse {
   readonly dealId: string;
+  readonly reliability: {
+    readonly ingestionState: IngestionState;
+    readonly coverageState: CoverageState;
+    readonly possibleGapSince: string | null;
+    readonly lastSignalObservedAt: string | null;
+    readonly lastSuccessfullyProcessedAt: string | null;
+    readonly lastReconciledAt: string | null;
+    readonly reconciliationOutcome: ReconciliationOutcome;
+  };
   readonly lineItems: {
     readonly items: readonly LineItemSummary[];
     readonly page: Page;
@@ -148,6 +172,10 @@ function boolean(value: unknown): boolean {
 
 function nullableString(value: unknown): string | null {
   return value === null ? null : string(value);
+}
+
+function nullableTimestamp(value: unknown): string | null {
+  return value === null ? null : timestamp(value);
 }
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T {
@@ -272,6 +300,10 @@ function lineItem(value: unknown): LineItemSummary {
   const coverageMode = oneOf(coverageSource.mode, HISTORY_COVERAGE_MODES);
   const observedFrom = timestamp(coverageSource.observedFrom);
   const hasUnknownState = boolean(coverageSource.hasUnknownState);
+  const retainedFrom = timestamp(coverageSource.retainedFrom);
+  const retentionLimited = boolean(coverageSource.retentionLimited);
+  if (new Date(retainedFrom).getTime() < new Date(observedFrom).getTime())
+    invalid();
   const knownMembership = deleted ? membershipAtDeletion : currentMembership;
   const calculatedUnknownState =
     Object.values(latest).some((value) => value.state === "UNKNOWN") ||
@@ -289,6 +321,8 @@ function lineItem(value: unknown): LineItemSummary {
       mode: coverageMode,
       observedFrom,
       hasUnknownState,
+      retainedFrom,
+      retentionLimited,
     },
   };
 }
@@ -343,6 +377,13 @@ export function parseDealAuditResponse(
 
   const lineItemsSource = record(source.lineItems);
   const eventsSource = record(source.events);
+  const reliabilitySource = record(source.reliability);
+  const coverageState = oneOf(reliabilitySource.coverageState, COVERAGE_STATES);
+  const possibleGapSince = nullableTimestamp(
+    reliabilitySource.possibleGapSince,
+  );
+  if ((coverageState === "POSSIBLE_GAP") !== (possibleGapSince !== null))
+    invalid();
   if (
     !Array.isArray(lineItemsSource.items) ||
     !Array.isArray(eventsSource.items)
@@ -353,6 +394,22 @@ export function parseDealAuditResponse(
 
   return {
     dealId,
+    reliability: {
+      ingestionState: oneOf(reliabilitySource.ingestionState, INGESTION_STATES),
+      coverageState,
+      possibleGapSince,
+      lastSignalObservedAt: nullableTimestamp(
+        reliabilitySource.lastSignalObservedAt,
+      ),
+      lastSuccessfullyProcessedAt: nullableTimestamp(
+        reliabilitySource.lastSuccessfullyProcessedAt,
+      ),
+      lastReconciledAt: nullableTimestamp(reliabilitySource.lastReconciledAt),
+      reconciliationOutcome: oneOf(
+        reliabilitySource.reconciliationOutcome,
+        RECONCILIATION_OUTCOMES,
+      ),
+    },
     lineItems: {
       items: lineItems,
       page: page(lineItemsSource.page, lineItems.length),

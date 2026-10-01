@@ -22,6 +22,7 @@ import com.udmconsulting.platform.connection.domain.Provider;
 import com.udmconsulting.platform.tenant.domain.TenantId;
 import java.net.URI;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import org.junit.jupiter.api.BeforeEach;
@@ -383,6 +384,20 @@ class RestHubSpotLineItemBaselineSourceTest {
                     assertThat(exception.failure())
                             .isEqualTo(BaselineSyncFailure.PROVIDER_UNAVAILABLE);
                     assertThat(exception).hasMessageNotContaining(ACCESS_TOKEN);
+                });
+    }
+
+    @Test
+    void preservesProviderRetryAfterForRateLimitBackoff() {
+        server.expect(requestTo(BASE_URL + "/crm/objects/2026-09/deals/1"))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
+                        .header(HttpHeaders.RETRY_AFTER, "120"));
+
+        assertThatThrownBy(() -> source.readDeal(connection, new ProviderObjectId("1")))
+                .isInstanceOfSatisfying(BaselineSyncException.class, exception -> {
+                    assertThat(exception.failure())
+                            .isEqualTo(BaselineSyncFailure.PROVIDER_UNAVAILABLE);
+                    assertThat(exception.retryAfter()).isEqualTo(Duration.ofMinutes(2));
                 });
     }
 

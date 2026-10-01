@@ -14,6 +14,7 @@ import java.util.Map;
 
 record DealAuditViewDto(
         String dealId,
+        Reliability reliability,
         Section<LineItem> lineItems,
         Section<AuditEvent> events) {
 
@@ -47,6 +48,7 @@ record DealAuditViewDto(
                 : null;
         return new DealAuditViewDto(
                 input.dealId().value(),
+                Reliability.from(view.reliability()),
                 new Section<>(lineItems, new Page(
                         input.lineItemsLimit(), view.lineItems().hasMore(), nextLineItemCursor)),
                 new Section<>(events, new Page(
@@ -57,6 +59,28 @@ record DealAuditViewDto(
     }
 
     record Page(int limit, boolean hasMore, String nextCursor) {
+    }
+
+    record Reliability(
+            String ingestionState,
+            String coverageState,
+            Instant possibleGapSince,
+            Instant lastSignalObservedAt,
+            Instant lastSuccessfullyProcessedAt,
+            Instant lastReconciledAt,
+            String reconciliationOutcome) {
+
+        static Reliability from(
+                com.udmconsulting.modules.lineitemwatch.application.LineItemReliability source) {
+            return new Reliability(
+                    source.ingestionState().name(),
+                    source.coverageState().name(),
+                    source.possibleGapSince(),
+                    source.lastSignalObservedAt(),
+                    source.lastSuccessfullyProcessedAt(),
+                    source.lastReconciledAt(),
+                    source.reconciliationOutcome().name());
+        }
     }
 
     record LineItem(
@@ -86,14 +110,21 @@ record DealAuditViewDto(
                     new HistoryCoverage(
                             source.historyCoverage().mode().name(),
                             source.historyCoverage().observedFrom(),
-                            source.historyCoverage().hasUnknownState()));
+                            source.historyCoverage().hasUnknownState(),
+                            source.historyCoverage().retainedFrom(),
+                            source.historyCoverage().retentionLimited()));
         }
     }
 
     record DealMembership(String currentMembership, String membershipAtDeletion) {
     }
 
-    record HistoryCoverage(String mode, Instant observedFrom, boolean hasUnknownState) {
+    record HistoryCoverage(
+            String mode,
+            Instant observedFrom,
+            boolean hasUnknownState,
+            Instant retainedFrom,
+            boolean retentionLimited) {
     }
 
     record AuditEvent(

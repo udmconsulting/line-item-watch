@@ -1,6 +1,7 @@
 package com.udmconsulting.modules.lineitemwatch.infrastructure.persistence;
 
 import com.udmconsulting.modules.lineitemwatch.application.LineItemChangeSignalStore;
+import com.udmconsulting.modules.lineitemwatch.application.LineItemReliabilityStore;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemChangeSignal;
 import com.udmconsulting.platform.connection.application.PlatformConnectionService;
 import com.udmconsulting.platform.connection.domain.ConnectionStatus;
@@ -34,14 +35,17 @@ public class JdbcLineItemChangeSignalStore implements LineItemChangeSignalStore 
     private final JdbcTemplate jdbcTemplate;
     private final PlatformConnectionService connectionService;
     private final EntitlementService entitlementService;
+    private final LineItemReliabilityStore reliabilityStore;
 
     public JdbcLineItemChangeSignalStore(
             JdbcTemplate jdbcTemplate,
             PlatformConnectionService connectionService,
-            EntitlementService entitlementService) {
+            EntitlementService entitlementService,
+            LineItemReliabilityStore reliabilityStore) {
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate);
         this.connectionService = Objects.requireNonNull(connectionService);
         this.entitlementService = Objects.requireNonNull(entitlementService);
+        this.reliabilityStore = Objects.requireNonNull(reliabilityStore);
     }
 
     @Override
@@ -100,6 +104,11 @@ public class JdbcLineItemChangeSignalStore implements LineItemChangeSignalStore 
                         signal.id(), tenantId.value(), connectionId.value());
             }
         }
+        signals.stream()
+                .map(LineItemChangeSignal::receivedAt)
+                .max(java.time.Instant::compareTo)
+                .ifPresent(observedAt -> reliabilityStore.signalObserved(
+                        tenantId, connectionId, observedAt));
         return new CaptureResult(captured, signals.size() - captured, true);
     }
 }

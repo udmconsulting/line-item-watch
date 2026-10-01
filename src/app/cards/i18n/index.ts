@@ -21,6 +21,10 @@ export type ErrorCode = PublicErrorCode | LocalErrorCode;
 export type CommonKey =
   | "title"
   | "intro"
+  | "reliabilityWarningTitle"
+  | "ingestionPausedWarning"
+  | "possibleGapWarning"
+  | "reconciliationDegradedWarning"
   | "lineItems"
   | "recentChanges"
   | "filters"
@@ -109,6 +113,7 @@ export type TranslationKey =
   | `historyCoverage.${HistoryCoverageMode}`
   | "historyCoverage.unknownState"
   | "historyCoverage.disclaimer"
+  | "historyCoverage.retentionLimited"
   | `common.${CommonKey}`;
 
 const bundles = { en, hu } as const;

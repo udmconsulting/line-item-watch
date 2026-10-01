@@ -30,7 +30,7 @@ Errors must be sanitized before they reach logs or monitoring services. `provide
 
 Typed domain/application failures remain separate from the shared operational registry. A logging or metrics boundary that needs aggregation maps them explicitly to `OperationalErrorCode`; merely adding a domain failure code does not expose it publicly or make it a metric tag. Diagnostic message wording is never used for that mapping.
 
-Micrometer records vendor-neutral `application.operation.duration` timers with exactly four bounded tags: `component`, `operation`, `outcome`, and `error_code`. Operation and error values come from closed application enums, never URLs, identifiers, cursors, or provider-controlled values. Existing `line_item_watch.processing.*` metrics remain the durable-worker operational series.
+Micrometer records vendor-neutral `application.operation.duration` timers with exactly four bounded tags: `component`, `operation`, `outcome`, and `error_code`. Operation and error values come from closed application enums, never URLs, identifiers, cursors, or provider-controlled values. Existing `line_item_watch.processing.*` metrics remain the durable-worker operational series. P.8 adds closed-outcome reconciliation and replay counters plus reconciliation-age, suspected-gap, and exhausted-signal gauges. No metric label contains a Tenant, connection, Deal, Line Item, signal, or provider-controlled value.
 
 ## Operational behavior
 

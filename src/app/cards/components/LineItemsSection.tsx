@@ -176,6 +176,15 @@ export function LineItemsSection({
                       <Text>{translate("historyCoverage.unknownState")}</Text>
                     ) : null}
                     <Text>{translate("historyCoverage.disclaimer")}</Text>
+                    {item.historyCoverage.retentionLimited ? (
+                      <Text>
+                        {translate("historyCoverage.retentionLimited", {
+                          date: formatter.timestamp(
+                            item.historyCoverage.retainedFrom,
+                          ),
+                        })}
+                      </Text>
+                    ) : null}
                   </Flex>
                 </Alert>
                 <Heading>{translate("common.commercialDetails")}</Heading>

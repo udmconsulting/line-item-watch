@@ -476,12 +476,35 @@ export function DealAuditCard({
     applied.through,
   ].filter(Boolean).length;
   const restartResults = () => readFirstPage(appliedRef.current, true);
+  const paused = data.reliability.ingestionState === "PAUSED";
+  const possibleGap = data.reliability.coverageState === "POSSIBLE_GAP";
+  const reconciliationDegraded =
+    data.reliability.reconciliationOutcome === "UNAVAILABLE" ||
+    data.reliability.reconciliationOutcome === "CONFLICT";
   return (
     <Flex direction="column" gap="md">
       <Flex direction="column" gap="xs">
         <Heading>{translate("common.title")}</Heading>
         <Text>{translate("common.intro")}</Text>
       </Flex>
+      {paused || possibleGap || reconciliationDegraded ? (
+        <Alert
+          title={translate("common.reliabilityWarningTitle")}
+          variant="warning"
+        >
+          <Flex direction="column" gap="xs">
+            {paused ? (
+              <Text>{translate("common.ingestionPausedWarning")}</Text>
+            ) : null}
+            {possibleGap ? (
+              <Text>{translate("common.possibleGapWarning")}</Text>
+            ) : null}
+            {reconciliationDegraded ? (
+              <Text>{translate("common.reconciliationDegradedWarning")}</Text>
+            ) : null}
+          </Flex>
+        </Alert>
+      ) : null}
       <Flex direction="column" gap="sm">
         <Heading>{translate("common.filters")}</Heading>
         <SearchInput
