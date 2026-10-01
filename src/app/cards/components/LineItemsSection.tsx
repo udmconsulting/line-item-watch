@@ -84,7 +84,12 @@ interface LineItemsSectionProps {
   readonly translate: Translate;
   readonly loadingMore: boolean;
   readonly paginationFailed: boolean;
+  readonly paginationRequiresRestart: boolean;
+  readonly searched: boolean;
+  readonly capped: boolean;
   readonly onLoadMore: () => void;
+  readonly onRestart: () => void;
+  readonly onShowHistory: (lineItemId: string) => void;
 }
 
 export function LineItemsSection({
@@ -94,14 +99,31 @@ export function LineItemsSection({
   translate,
   loadingMore,
   paginationFailed,
+  paginationRequiresRestart,
+  searched,
+  capped,
   onLoadMore,
+  onRestart,
+  onShowHistory,
 }: LineItemsSectionProps) {
   return (
     <Flex direction="column" gap="sm">
       <Heading>{translate("common.lineItems")}</Heading>
       {items.length === 0 ? (
-        <EmptyState title={translate("common.noLineItemsTitle")}>
-          <Text>{translate("common.noLineItemsDescription")}</Text>
+        <EmptyState
+          title={translate(
+            searched
+              ? "common.noLineItemSearchResultsTitle"
+              : "common.noLineItemsTitle",
+          )}
+        >
+          <Text>
+            {translate(
+              searched
+                ? "common.noLineItemSearchResultsDescription"
+                : "common.noLineItemsDescription",
+            )}
+          </Text>
         </EmptyState>
       ) : (
         items.map((item) => {
@@ -118,6 +140,9 @@ export function LineItemsSection({
                     value: item.lineItemId,
                   })}
                 </Text>
+                <Button onClick={() => onShowHistory(item.lineItemId)}>
+                  {translate("common.showHistory")}
+                </Button>
                 <StatusTag variant={item.deleted ? "default" : "info"}>
                   {item.deleted
                     ? translate("common.deleted")
@@ -180,11 +205,24 @@ export function LineItemsSection({
         >
           <Flex direction="column" gap="xs">
             <Text>{translate("common.paginationErrorDescription")}</Text>
-            <Button onClick={onLoadMore}>{translate("common.retry")}</Button>
+            <Button
+              onClick={paginationRequiresRestart ? onRestart : onLoadMore}
+            >
+              {translate(
+                paginationRequiresRestart
+                  ? "common.restartResults"
+                  : "common.retry",
+              )}
+            </Button>
           </Flex>
         </Alert>
       ) : null}
-      {page.hasMore && !paginationFailed ? (
+      {capped && page.hasMore ? (
+        <Alert title={translate("common.lineItemCapTitle")} variant="info">
+          <Text>{translate("common.lineItemCapDescription")}</Text>
+        </Alert>
+      ) : null}
+      {page.hasMore && !paginationFailed && !capped ? (
         <LoadingButton loading={loadingMore} onClick={onLoadMore}>
           {loadingMore
             ? translate("common.lineItemsLoading")

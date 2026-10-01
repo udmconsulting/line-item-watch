@@ -15,6 +15,7 @@ import com.udmconsulting.modules.lineitemwatch.domain.LineItemChangeSignal;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemChangeSignalType;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemHistoryCoverage;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemObservation;
+import com.udmconsulting.modules.lineitemwatch.domain.LineItemAuditType;
 import com.udmconsulting.modules.lineitemwatch.domain.MonitoredLineItemProperty;
 import com.udmconsulting.modules.lineitemwatch.domain.ProviderDeduplicationKey;
 import com.udmconsulting.modules.lineitemwatch.domain.ProviderObjectId;
@@ -108,12 +109,24 @@ class DealAuditReadPersistenceIntegrationTest {
         assertThat(jdbcTemplate.queryForList("""
                 SELECT column_name FROM information_schema.columns
                 WHERE table_name = 'line_item_watch_audit_event_deal_context'
-                """, String.class)).contains("occurred_at", "semantic_key");
+                """, String.class)).contains(
+                        "occurred_at", "semantic_key", "line_item_id", "event_type", "property_name");
         assertThat(jdbcTemplate.queryForList("""
                 SELECT indexname FROM pg_indexes
                 WHERE schemaname = 'public'
                   AND tablename = 'line_item_watch_audit_event_deal_context'
-                """, String.class)).contains("idx_line_item_watch_audit_event_deal_chronology");
+                """, String.class)).contains(
+                        "idx_line_item_watch_audit_event_deal_chronology",
+                        "idx_liw_audit_context_line_item_chronology",
+                        "idx_liw_audit_context_event_type_chronology",
+                        "idx_liw_audit_context_property_chronology");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM pg_extension WHERE extname = 'pg_trgm'", Long.class))
+                .isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT indexname FROM pg_indexes
+                WHERE schemaname = 'public' AND tablename = 'line_item_watch_snapshot'
+                """, String.class)).contains("idx_liw_snapshot_latest_name_trgm");
 
         Fixture fixture = fixture("migration-consistency");
         Instant time = Instant.parse("2026-09-28T10:00:00Z");
@@ -184,7 +197,10 @@ class DealAuditReadPersistenceIntegrationTest {
             try (Statement statement = connection.createStatement();
                     ResultSet context = statement.executeQuery("""
                             SELECT context.occurred_at = event.occurred_at,
-                                   context.semantic_key = event.semantic_key
+                                   context.semantic_key = event.semantic_key,
+                                   context.line_item_id = event.line_item_id,
+                                   context.event_type = event.event_type,
+                                   context.property_name IS NOT DISTINCT FROM event.property_name
                             FROM line_item_watch_audit_event_deal_context context
                             JOIN line_item_watch_audit_event event
                               ON event.id = context.audit_event_id
@@ -192,6 +208,9 @@ class DealAuditReadPersistenceIntegrationTest {
                 assertThat(context.next()).isTrue();
                 assertThat(context.getBoolean(1)).isTrue();
                 assertThat(context.getBoolean(2)).isTrue();
+                assertThat(context.getBoolean(3)).isTrue();
+                assertThat(context.getBoolean(4)).isTrue();
+                assertThat(context.getBoolean(5)).isTrue();
             }
         } finally {
             if (!connection.isClosed()) {
@@ -370,6 +389,107 @@ class DealAuditReadPersistenceIntegrationTest {
         assertThat(read(first, "9999", 20, null, 20, null).lineItems().items()).isEmpty();
     }
 
+    @Test
+    void latestNameSearchIsCaseInsensitiveLiteralAndUsesStableKeysets() {
+        Fixture fixture = fixture("name-search");
+        Instant time = Instant.parse("2026-09-28T13:00:00Z");
+        snapshotStore.establish(fixture.tenant().id(), fixture.connection().id(), List.of(
+                observation("1001", "First", time, time, "9001"),
+                observation("1002", "Alpha 50%_\\ Support", time, time, "9001"),
+                observation("1003", "Árvíztűrő", time, time, "9001"),
+                observation("1004", "Last alpha 50%_\\ support", time, time, "9001")));
+
+        DealAuditQuery.LineItemFilter literal =
+                new DealAuditQuery.LineItemFilter("ALPHA 50%_\\ SUPPORT");
+        DealAuditView first = readFiltered(
+                fixture, "9001", 1, literal, null, 0,
+                DealAuditQuery.EventFilter.none(), null);
+        assertThat(first.lineItems().items())
+                .extracting(item -> item.lineItemId().value())
+                .containsExactly("1002");
+        assertThat(first.lineItems().hasMore()).isTrue();
+        DealAuditView second = readFiltered(
+                fixture,
+                "9001",
+                1,
+                literal,
+                new DealAuditQuery.LineItemCursor(first.lineItems().items().getFirst().lineItemId()),
+                0,
+                DealAuditQuery.EventFilter.none(),
+                null);
+        assertThat(second.lineItems().items())
+                .extracting(item -> item.lineItemId().value())
+                .containsExactly("1004");
+        assertThat(second.lineItems().hasMore()).isFalse();
+
+        DealAuditView accentSensitive = readFiltered(
+                fixture,
+                "9001",
+                20,
+                new DealAuditQuery.LineItemFilter("arviz"),
+                null,
+                0,
+                DealAuditQuery.EventFilter.none(),
+                null);
+        assertThat(accentSensitive.lineItems().items()).isEmpty();
+    }
+
+    @Test
+    void eventFiltersAreConjunctiveDateBoundedAndReturnLatestRetainedIdentity() {
+        Fixture fixture = fixture("event-filters");
+        Instant start = Instant.parse("2026-09-28T10:00:00Z");
+        snapshotStore.establish(fixture.tenant().id(), fixture.connection().id(), List.of(
+                observation("2001", "Latest retained name", start.minusSeconds(60), start, "9001"),
+                observation("2002", "Other item", start.minusSeconds(60), start, "9001")));
+        signalStore.capture(fixture.tenant().id(), fixture.connection().id(), List.of(
+                signal(fixture, "quantity-one", "2001", start,
+                        LineItemChangeSignalType.PROPERTY_CHANGED,
+                        MonitoredLineItemProperty.QUANTITY, "2", null, null, null),
+                signal(fixture, "price-one", "2001", start.plusSeconds(1),
+                        LineItemChangeSignalType.PROPERTY_CHANGED,
+                        MonitoredLineItemProperty.PRICE, "10", null, null, null),
+                signal(fixture, "quantity-two", "2002", start,
+                        LineItemChangeSignalType.PROPERTY_CHANGED,
+                        MonitoredLineItemProperty.QUANTITY, "3", null, null, null)));
+        processAll();
+
+        DealAuditQuery.EventFilter filter = new DealAuditQuery.EventFilter(
+                LineItemAuditType.PROPERTY_CHANGED,
+                MonitoredLineItemProperty.QUANTITY,
+                new ProviderObjectId("2001"),
+                start,
+                start.plusSeconds(1));
+        DealAuditView result = readFiltered(
+                fixture,
+                "9001",
+                0,
+                DealAuditQuery.LineItemFilter.none(),
+                null,
+                20,
+                filter,
+                null);
+
+        assertThat(result.events().items()).hasSize(1);
+        DealAuditView.AuditEvent event = result.events().items().getFirst();
+        assertThat(event.lineItemId().value()).isEqualTo("2001");
+        assertThat(event.property()).isEqualTo(MonitoredLineItemProperty.QUANTITY);
+        assertThat(event.occurredAt()).isEqualTo(start);
+        assertThat(event.latestRetainedLineItemName().value())
+                .isEqualTo("Latest retained name");
+
+        DealAuditQuery.EventFilter noMatch = new DealAuditQuery.EventFilter(
+                null, null, new ProviderObjectId("9999"), null, null);
+        assertThat(readFiltered(
+                fixture,
+                "9001",
+                0,
+                DealAuditQuery.LineItemFilter.none(),
+                null,
+                20,
+                noMatch,
+                null).events().items()).isEmpty();
+    }
+
     private DealAuditView read(
             Fixture fixture,
             String dealId,
@@ -384,6 +504,27 @@ class DealAuditReadPersistenceIntegrationTest {
                 lineItemsLimit,
                 lineItemsCursor,
                 eventsLimit,
+                eventsCursor));
+    }
+
+    private DealAuditView readFiltered(
+            Fixture fixture,
+            String dealId,
+            int lineItemsLimit,
+            DealAuditQuery.LineItemFilter lineItemFilter,
+            DealAuditQuery.LineItemCursor lineItemsCursor,
+            int eventsLimit,
+            DealAuditQuery.EventFilter eventFilter,
+            DealAuditQuery.EventCursor eventsCursor) {
+        return readDealAudit.read(new DealAuditQuery(
+                fixture.tenant().id(),
+                fixture.connection().id(),
+                new ProviderObjectId(dealId),
+                lineItemsLimit,
+                lineItemFilter,
+                lineItemsCursor,
+                eventsLimit,
+                eventFilter,
                 eventsCursor));
     }
 

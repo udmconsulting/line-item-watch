@@ -28,7 +28,8 @@ final class HubSpotUiExtensionRequestAuthenticator {
     private static final int MAX_QUERY_LENGTH = 4096;
     private static final Set<String> ALLOWED_PARAMETERS = Set.of(
             "portalId", "userId", "userEmail", "appId",
-            "lineItemsLimit", "lineItemsCursor", "eventsLimit", "eventsCursor");
+            "lineItemsLimit", "lineItemsCursor", "eventsLimit", "eventsCursor",
+            "lineItemSearch", "eventType", "field", "lineItemId", "from", "to");
     private static final Map<String, Character> SIGNATURE_DECODE = Map.ofEntries(
             Map.entry("3A", ':'), Map.entry("2F", '/'), Map.entry("3F", '?'),
             Map.entry("40", '@'), Map.entry("21", '!'), Map.entry("24", '$'),

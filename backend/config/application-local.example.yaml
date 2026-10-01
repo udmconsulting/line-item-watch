@@ -22,3 +22,15 @@ hubspot:
   credentials:
     key-id: local-acceptance-2
     encryption-key: __SET_LOCAL_BASE64_AES_256_KEY__
+
+line-item-watch:
+  audit:
+    cursor:
+      # Required when hubspot.ui-extension.enabled=true. Generate a dedicated
+      # 32-byte base64 key; do not reuse OAuth or credential-encryption keys.
+      active-key-id: local-cursor-1
+      active-key: __SET_LOCAL_BASE64_CURSOR_HMAC_KEY__
+      # During rotation, keep one previous ID/key pair only until open cards
+      # have restarted their result windows.
+      previous-key-id:
+      previous-key:

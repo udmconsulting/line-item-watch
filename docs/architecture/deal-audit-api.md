@@ -18,8 +18,16 @@ Serving this API makes zero HubSpot/provider calls. A valid, entitled account re
 | `lineItemsCursor` | none | opaque | Position in Line Item ID ascending order |
 | `eventsLimit` | 20 | 0–20 | Maximum audit events; `0` skips this query |
 | `eventsCursor` | none | opaque | Position in event chronology |
+| `lineItemSearch` | none | 2–100 Unicode code points | Literal, case-insensitive substring of the latest retained Line Item name |
+| `eventType` | none | owned enum | Exact semantic event type |
+| `field` | none | monitored API field | Exact changed field; implies `PROPERTY_CHANGED` |
+| `lineItemId` | none | positive decimal ID | Exact Line Item event scope |
+| `from` | none | RFC 3339 instant | Inclusive event boundary |
+| `to` | none | RFC 3339 instant | Exclusive event boundary |
 
-At least one limit must be greater than zero. Cursors are opaque, versioned, section-specific, and bound to the requested Deal. Line Items use external Line Item ID ascending order. Events use `(occurredAt DESC, semanticKey DESC)`, so equal timestamps remain deterministic. No query uses `OFFSET`.
+At least one limit must be greater than zero. Search trims only outer whitespace and treats `%`, `_`, and `\` literally; matching is accent-sensitive under the configured PostgreSQL collation. Event filters are allowlisted, conjunctive, and applied after the retained history boundary. A valid filter with no match returns an empty page.
+
+Cursors are opaque, versioned, integrity-protected with a dedicated HMAC-SHA-256 key, section/Deal-specific, and bound to the canonical effective filters. New cursors are v2; v1 is accepted only for an unfiltered request during the compatibility window. A changed filter, Deal, section, malformed payload, or failed integrity check returns `INVALID_REQUEST`. Line Items use external Line Item ID ascending order. Events use `(occurredAt DESC, semanticKey DESC)`, so equal timestamps remain deterministic. No query uses `OFFSET`.
 
 Both requested page domains run in one repeatable-read transaction. The endpoint is application-level read-only, but its PostgreSQL transaction is intentionally not marked read-only because authorization revalidation acquires shared row locks on the Platform Connection and entitlement. A later request using either cursor starts a new transaction; the API does not promise snapshot consistency across pagination requests while new history is arriving.
 
@@ -67,6 +75,7 @@ Each property/event value is truncated to at most 512 Unicode code points and re
       {
         "eventId": "evt_<opaque-semantic-identity>",
         "lineItemId": "2002",
+        "latestRetainedLineItemName": {"state": "VALUE", "value": "Support", "truncated": false},
         "type": "PROPERTY_CHANGED",
         "occurredAt": "2026-09-28T10:05:00Z",
         "field": "quantity",
@@ -80,6 +89,8 @@ Each property/event value is truncated to at most 512 Unicode code points and re
 ```
 
 Every monitored latest property is present. `UNKNOWN` means the retained projection cannot determine the value. `ABSENT` means the property is known to have no value. `VALUE` carries normalized product text. No currency is inferred or returned.
+
+`latestRetainedLineItemName` is additive identity context from the current retained projection, not the name at event time. A `name` property-change event's before/after values remain the authoritative historical name transition. The name is selected in the event query without a provider call or per-row lookup.
 
 ## Membership and history coverage
 
@@ -104,7 +115,7 @@ Errors are localization-neutral:
 
 | HTTP status | Code | Boundary |
 |---:|---|---|
-| 400 | `INVALID_REQUEST` | Invalid Deal ID, limit, duplicate/blank parameter, or cursor |
+| 400 | `INVALID_REQUEST` | Invalid Deal ID, limit, filter, duplicate/blank parameter, cursor integrity, or cursor/query mismatch |
 | 401 | `AUTHENTICATION_FAILED` | Invalid signed request, metadata, app ID, or timestamp |
 | 403 | `ACCOUNT_UNAVAILABLE` | Unknown/inactive/reauthentication-required/unentitled account, without Deal enumeration detail |
 | 500 | `INTERNAL_ERROR` | Internal invariant or unexpected failure |

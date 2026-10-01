@@ -6,6 +6,14 @@ export interface ValueFormatter {
   dateOnly(value: string): string;
   number(value: string): string;
   delay(value: string, unit: "days" | "months", translate: Translate): string;
+  dayKey(value: string): string;
+  dayLabel(value: string, now: Date, translate: Translate): string;
+}
+
+export interface CalendarDate {
+  readonly year: number;
+  readonly month: number;
+  readonly date: number;
 }
 
 export function resolveTimeZone(value: unknown): string {
@@ -87,7 +95,98 @@ export function createValueFormatter(
         value: this.number(value),
       });
     },
+    dayKey(value) {
+      const parsed = new Date(value);
+      if (!Number.isFinite(parsed.getTime())) return value;
+      return portalDayKey(parsed, timeZone);
+    },
+    dayLabel(value, now, translate) {
+      const parsed = new Date(value);
+      if (!Number.isFinite(parsed.getTime())) return value;
+      const eventKey = portalDayKey(parsed, timeZone);
+      const todayKey = portalDayKey(now, timeZone);
+      if (eventKey === todayKey) return translate("common.today");
+      const today = parseDayKey(todayKey);
+      const yesterday = new Date(
+        Date.UTC(today.year, today.month - 1, today.date - 1),
+      );
+      if (eventKey === utcDayKey(yesterday))
+        return translate("common.yesterday");
+      return new Intl.DateTimeFormat(locale, {
+        dateStyle: "long",
+        timeZone,
+      }).format(parsed);
+    },
   };
+}
+
+function portalDayKey(value: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone,
+  }).formatToParts(value);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((candidate) => candidate.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function parseDayKey(value: string): CalendarDate {
+  const [year, month, date] = value.split("-").map(Number);
+  return { year: year ?? 0, month: month ?? 0, date: date ?? 0 };
+}
+
+function utcDayKey(value: Date): string {
+  return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
+}
+
+export function nextCalendarDate(value: CalendarDate): CalendarDate {
+  const next = new Date(Date.UTC(value.year, value.month - 1, value.date + 1));
+  return {
+    year: next.getUTCFullYear(),
+    month: next.getUTCMonth() + 1,
+    date: next.getUTCDate(),
+  };
+}
+
+export function portalDateStartInstant(
+  value: CalendarDate,
+  timeZone: string,
+): string {
+  const targetUtc = Date.UTC(value.year, value.month - 1, value.date);
+  let candidate = targetUtc;
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+    timeZone,
+  });
+  for (let index = 0; index < 4; index += 1) {
+    const parts = formatter.formatToParts(new Date(candidate));
+    const number = (type: Intl.DateTimeFormatPartTypes) =>
+      Number(parts.find((part) => part.type === type)?.value);
+    const representedAsUtc = Date.UTC(
+      number("year"),
+      number("month") - 1,
+      number("day"),
+      number("hour"),
+      number("minute"),
+      number("second"),
+    );
+    const next = targetUtc - (representedAsUtc - candidate);
+    if (next === candidate) break;
+    candidate = next;
+  }
+  const result = new Date(candidate);
+  if (portalDayKey(result, timeZone) !== utcDayKey(new Date(targetUtc))) {
+    throw new Error("Portal calendar date has no representable start.");
+  }
+  return result.toISOString();
 }
 
 export function formatObservedValue(

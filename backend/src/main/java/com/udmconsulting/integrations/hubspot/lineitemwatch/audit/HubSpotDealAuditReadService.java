@@ -64,8 +64,10 @@ class HubSpotDealAuditReadService {
                 connection.id(),
                 input.dealId(),
                 input.lineItemsLimit(),
+                input.lineItemFilter(),
                 input.lineItemsCursor(),
                 input.eventsLimit(),
+                input.eventFilter(),
                 input.eventsCursor()));
         LOGGER.atInfo()
                 .addKeyValue("component", "line_item_watch")

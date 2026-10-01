@@ -76,6 +76,8 @@ export interface LineItemSummary {
 export interface AuditEvent {
   readonly eventId: string;
   readonly lineItemId: string;
+  /** Latest retained identity label; it is not the name at event time. */
+  readonly latestRetainedLineItemName: ObservedValue;
   readonly type: AuditEventType;
   readonly occurredAt: string;
   readonly field: MonitoredProperty | null;
@@ -319,6 +321,10 @@ function auditEvent(value: unknown): AuditEvent {
       ? string(source.eventId)
       : invalid(),
     lineItemId: parseLineItemId(source.lineItemId),
+    latestRetainedLineItemName: observedValue(
+      source.latestRetainedLineItemName,
+      true,
+    ),
     type,
     occurredAt: timestamp(source.occurredAt),
     field,

@@ -4,6 +4,8 @@ import {
   parsePositiveProviderId,
   parsePublicErrorResponse,
   type DealAuditResponse,
+  type AuditEventType,
+  type MonitoredProperty,
   type PublicErrorCode,
 } from "./contracts";
 
@@ -31,7 +33,20 @@ export class DealAuditClientError extends Error {
 }
 
 export interface DealAuditClient {
-  read(section?: RequestSection, cursor?: string): Promise<DealAuditResponse>;
+  read(
+    section?: RequestSection,
+    cursor?: string,
+    query?: DealAuditRequestQuery,
+  ): Promise<DealAuditResponse>;
+}
+
+export interface DealAuditRequestQuery {
+  readonly lineItemSearch?: string;
+  readonly eventType?: AuditEventType;
+  readonly field?: MonitoredProperty;
+  readonly lineItemId?: string;
+  readonly from?: string;
+  readonly to?: string;
 }
 
 const sectionLimits = {
@@ -100,7 +115,11 @@ export function createDealAuditClient(
   const endpoint = `${origin}/api/v1/line-item-watch/deals/${encodeURIComponent(dealId)}/audit`;
 
   return {
-    async read(section = "initial", cursor): Promise<DealAuditResponse> {
+    async read(
+      section = "initial",
+      cursor,
+      query = {},
+    ): Promise<DealAuditResponse> {
       const parameters: string[] = [];
       if (section === "lineItems") {
         parameters.push("lineItemsLimit=10", "eventsLimit=0");
@@ -110,6 +129,29 @@ export function createDealAuditClient(
         parameters.push("lineItemsLimit=0", "eventsLimit=20");
         if (cursor)
           parameters.push(`eventsCursor=${encodeURIComponent(cursor)}`);
+      }
+      const includeLineItems = section !== "events";
+      const includeEvents = section !== "lineItems";
+      if (includeLineItems && query.lineItemSearch !== undefined) {
+        parameters.push(
+          `lineItemSearch=${encodeURIComponent(query.lineItemSearch)}`,
+        );
+      }
+      if (includeEvents) {
+        const eventParameters: Array<
+          readonly [keyof DealAuditRequestQuery, string | undefined]
+        > = [
+          ["eventType", query.eventType],
+          ["field", query.field],
+          ["lineItemId", query.lineItemId],
+          ["from", query.from],
+          ["to", query.to],
+        ];
+        for (const [name, value] of eventParameters) {
+          if (value !== undefined) {
+            parameters.push(`${name}=${encodeURIComponent(value)}`);
+          }
+        }
       }
       const url =
         parameters.length === 0

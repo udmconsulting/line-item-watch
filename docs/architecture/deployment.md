@@ -14,6 +14,7 @@ Logical roles permit independent scaling or failure isolation later without requ
 ## Infrastructure expectations
 
 - PostgreSQL 18 is the implemented database baseline. Liquibase is the sole schema-management mechanism, and Hibernate validates rather than creates or updates the schema.
+- Migration `008` requires the trusted PostgreSQL `pg_trgm` extension and creates the latest-name GIN index. A database/platform owner must pre-provision it when the application migration role lacks database `CREATE` privilege or the managed service restricts extension installation. `CREATE EXTENSION IF NOT EXISTS pg_trgm` then succeeds or the migration halts; there is no unindexed substring-search fallback and runtime credentials need not be superuser.
 - Every public endpoint requires HTTPS/TLS.
 - Secrets and OAuth credentials require managed protection and encryption at rest.
 - Production data requires managed backups, defined retention, and verified restores.
@@ -21,6 +22,7 @@ Logical roles permit independent scaling or failure isolation later without requ
 - Access is least-privilege, individual rather than shared, controlled, and auditable where appropriate.
 - An EU processing region is preferred where practical, subject to provider evaluation.
 - OAuth client credentials and the Base64-encoded AES-256 credential key are mandatory environment-supplied configuration. The application fails startup when these are absent or invalid.
+- When the Deal audit endpoint is enabled, a separate canonical Base64 32-byte cursor-integrity key and safe key ID are mandatory. OAuth and credential-encryption secrets must not be reused. One optional previous ID/key pair supports a bounded rotation window.
 - HubSpot provider traffic requires HTTPS outside explicit localhost/loopback development stubs and uses externally configurable bounded connect/read timeouts.
 
 ## Deferred decisions

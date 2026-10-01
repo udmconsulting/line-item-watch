@@ -20,7 +20,7 @@ import tools.jackson.databind.json.JsonMapper;
 class DealAuditViewDtoTest {
 
     private static final Instant TIME = Instant.parse("2026-09-28T12:00:00Z");
-    private final DealAuditCursorCodec codec = new DealAuditCursorCodec();
+    private final DealAuditCursorCodec codec = DealAuditCursorCodec.forTests();
     private final ObjectMapper objectMapper = JsonMapper.builder().findAndAddModules().build();
 
     @Test
@@ -43,6 +43,7 @@ class DealAuditViewDtoTest {
         DealAuditView.AuditEvent event = new DealAuditView.AuditEvent(
                 semanticKey,
                 new ProviderObjectId("line-1"),
+                ObservedValue.value("A"),
                 LineItemAuditType.PROPERTY_CHANGED,
                 TIME,
                 MonitoredLineItemProperty.NAME,
@@ -116,6 +117,7 @@ class DealAuditViewDtoTest {
                     return new DealAuditView.AuditEvent(
                             key,
                             new ProviderObjectId("line-" + index),
+                            ObservedValue.value(oversized),
                             LineItemAuditType.PROPERTY_CHANGED,
                             TIME.minusSeconds(index),
                             MonitoredLineItemProperty.NAME,

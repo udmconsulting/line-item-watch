@@ -77,6 +77,7 @@ public record DealAuditView(Page<LineItemSummary> lineItems, Page<AuditEvent> ev
     public record AuditEvent(
             byte[] semanticKey,
             ProviderObjectId lineItemId,
+            ObservedValue latestRetainedLineItemName,
             LineItemAuditType type,
             Instant occurredAt,
             MonitoredLineItemProperty property,
@@ -90,6 +91,9 @@ public record DealAuditView(Page<LineItemSummary> lineItems, Page<AuditEvent> ev
             }
             semanticKey = semanticKey.clone();
             Objects.requireNonNull(lineItemId, "lineItemId must not be null");
+            Objects.requireNonNull(
+                    latestRetainedLineItemName,
+                    "latestRetainedLineItemName must not be null");
             Objects.requireNonNull(type, "type must not be null");
             Objects.requireNonNull(occurredAt, "occurredAt must not be null");
             Objects.requireNonNull(before, "before must not be null");
