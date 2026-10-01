@@ -71,6 +71,9 @@ class JdbcDealAuditViewRepository implements DealAuditViewRepository {
 
     @Override
     public StoredPage<StoredLineItem> readLineItems(DealAuditQuery query) {
+        String searchPredicate = query.lineItemFilter().active()
+                ? "AND lower(latest.name) LIKE lower(?) ESCAPE '\\'"
+                : "";
         String cursorPredicate = query.lineItemsCursor() == null
                 ? ""
                 : "AND item.external_line_item_id > ?";
@@ -111,9 +114,13 @@ class JdbcDealAuditViewRepository implements DealAuditViewRepository {
                 WHERE item.tenant_id = ?
                   AND item.connection_id = ?
                   %s
+                  %s
                 ORDER BY item.external_line_item_id
                 LIMIT ?
-                """.formatted(RELEVANT_LINE_ITEMS.indent(4), cursorPredicate);
+                """.formatted(
+                        RELEVANT_LINE_ITEMS.indent(4),
+                        searchPredicate,
+                        cursorPredicate);
 
         var arguments = new java.util.ArrayList<>();
         addOwnerDeal(arguments, query);
@@ -122,6 +129,9 @@ class JdbcDealAuditViewRepository implements DealAuditViewRepository {
         arguments.add(query.dealId().value());
         arguments.add(query.tenantId().value());
         arguments.add(query.connectionId().value());
+        if (query.lineItemFilter().active()) {
+            arguments.add("%" + escapeLike(query.lineItemFilter().search()) + "%");
+        }
         if (query.lineItemsCursor() != null) {
             arguments.add(query.lineItemsCursor().lineItemId().value());
         }
@@ -137,6 +147,39 @@ class JdbcDealAuditViewRepository implements DealAuditViewRepository {
 
     @Override
     public StoredPage<DealAuditView.AuditEvent> readEvents(DealAuditQuery query) {
+        StringBuilder filterPredicates = new StringBuilder();
+        var filterArguments = new java.util.ArrayList<>();
+        DealAuditQuery.EventFilter filter = query.eventFilter();
+        if (filter.eventType() != null) {
+            filterPredicates.append("AND context.event_type = ?\n");
+            filterArguments.add(filter.eventType().name());
+        }
+        if (filter.field() != null) {
+            filterPredicates.append("AND context.property_name = ?\n");
+            filterArguments.add(filter.field().providerName());
+        }
+        if (filter.lineItemId() != null) {
+            filterPredicates.append("""
+                    AND context.line_item_id = (
+                        SELECT selected.id
+                        FROM line_item_watch_line_item selected
+                        WHERE selected.tenant_id = ?
+                          AND selected.connection_id = ?
+                          AND selected.external_line_item_id = ?
+                    )
+                    """);
+            filterArguments.add(query.tenantId().value());
+            filterArguments.add(query.connectionId().value());
+            filterArguments.add(filter.lineItemId().value());
+        }
+        if (filter.from() != null) {
+            filterPredicates.append("AND context.occurred_at >= ?\n");
+            filterArguments.add(Timestamp.from(filter.from()));
+        }
+        if (filter.to() != null) {
+            filterPredicates.append("AND context.occurred_at < ?\n");
+            filterArguments.add(Timestamp.from(filter.to()));
+        }
         String cursorPredicate = query.eventsCursor() == null
                 ? ""
                 : """
@@ -147,7 +190,10 @@ class JdbcDealAuditViewRepository implements DealAuditViewRepository {
                 SELECT context.semantic_key, context.occurred_at,
                        item.external_line_item_id, event.event_type,
                        event.property_name, event.before_state, event.before_value,
-                       event.after_state, event.after_value
+                       event.after_state, event.after_value,
+                       ('name' = ANY(coverage.known_properties))
+                           AS latest_retained_name_known,
+                       coverage.name AS latest_retained_line_item_name
                 FROM line_item_watch_audit_event_deal_context context
                 JOIN line_item_watch_audit_event event
                   ON event.tenant_id = context.tenant_id
@@ -169,12 +215,14 @@ class JdbcDealAuditViewRepository implements DealAuditViewRepository {
                   AND context.external_deal_id = ?
                   AND context.occurred_at >= coverage.history_observed_from
                   %s
+                  %s
                 ORDER BY context.occurred_at DESC, context.semantic_key DESC
                 LIMIT ?
-                """.formatted(cursorPredicate);
+                """.formatted(filterPredicates, cursorPredicate);
 
         var arguments = new java.util.ArrayList<>();
         addOwnerDeal(arguments, query);
+        arguments.addAll(filterArguments);
         if (query.eventsCursor() != null) {
             Timestamp occurredAt = Timestamp.from(query.eventsCursor().occurredAt());
             arguments.add(occurredAt);
@@ -220,6 +268,7 @@ class JdbcDealAuditViewRepository implements DealAuditViewRepository {
         return new DealAuditView.AuditEvent(
                 row.getBytes("semantic_key"),
                 new ProviderObjectId(row.getString("external_line_item_id")),
+                latestRetainedName(row),
                 LineItemAuditType.valueOf(row.getString("event_type")),
                 row.getTimestamp("occurred_at").toInstant(),
                 property == null
@@ -227,6 +276,22 @@ class JdbcDealAuditViewRepository implements DealAuditViewRepository {
                         : MonitoredLineItemProperty.fromProviderName(property).orElseThrow(),
                 observedValue(row, "before_state", "before_value"),
                 observedValue(row, "after_state", "after_value"));
+    }
+
+    private static ObservedValue latestRetainedName(ResultSet row) throws SQLException {
+        if (!row.getBoolean("latest_retained_name_known")) {
+            return ObservedValue.unknown();
+        }
+        String value = row.getString("latest_retained_line_item_name");
+        return value == null
+                ? ObservedValue.absent()
+                : LineItemPropertyValues.normalize(MonitoredLineItemProperty.NAME, value);
+    }
+
+    private static String escapeLike(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 
     private static Map<MonitoredLineItemProperty, ObservedValue> latestProperties(ResultSet row)

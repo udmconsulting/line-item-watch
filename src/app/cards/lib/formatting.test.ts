@@ -8,6 +8,8 @@ import {
 import {
   createValueFormatter,
   formatObservedValue,
+  nextCalendarDate,
+  portalDateStartInstant,
   resolveTimeZone,
 } from "./formatting";
 
@@ -92,5 +94,40 @@ describe("locale and value formatting", () => {
       "Az információ nem érhető el.",
     );
     expect(logger).not.toHaveBeenCalled();
+  });
+
+  it("uses portal calendar days for Today, Yesterday, and locale headings", () => {
+    const translate = createTranslator("en");
+    const formatter = createValueFormatter("en-US", "Europe/Budapest");
+    const now = new Date("2026-09-29T22:30:00Z");
+
+    expect(formatter.dayKey("2026-09-29T22:15:00Z")).toBe("2026-09-30");
+    expect(formatter.dayLabel("2026-09-29T22:15:00Z", now, translate)).toBe(
+      "Today",
+    );
+    expect(formatter.dayLabel("2026-09-28T22:15:00Z", now, translate)).toBe(
+      "Yesterday",
+    );
+    expect(
+      formatter.dayLabel("2026-09-27T12:00:00Z", now, translate),
+    ).toContain("September 27");
+  });
+
+  it("converts portal date boundaries across DST without browser-timezone input", () => {
+    const spring = { year: 2026, month: 3, date: 29 };
+    expect(portalDateStartInstant(spring, "Europe/Budapest")).toBe(
+      "2026-03-28T23:00:00.000Z",
+    );
+    expect(
+      portalDateStartInstant(nextCalendarDate(spring), "Europe/Budapest"),
+    ).toBe("2026-03-29T22:00:00.000Z");
+
+    const autumn = { year: 2026, month: 10, date: 25 };
+    expect(portalDateStartInstant(autumn, "Europe/Budapest")).toBe(
+      "2026-10-24T22:00:00.000Z",
+    );
+    expect(
+      portalDateStartInstant(nextCalendarDate(autumn), "Europe/Budapest"),
+    ).toBe("2026-10-25T23:00:00.000Z");
   });
 });

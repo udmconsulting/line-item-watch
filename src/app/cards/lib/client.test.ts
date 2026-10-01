@@ -50,6 +50,42 @@ describe("Deal audit client", () => {
     );
   });
 
+  it("serializes only the filters relevant to each requested section", async () => {
+    const fetcher = vi
+      .fn<Fetcher>()
+      .mockResolvedValueOnce(jsonResponse(response([], [], page(10), page(0))))
+      .mockResolvedValueOnce(jsonResponse(response([], [], page(0), page(20))))
+      .mockResolvedValueOnce(jsonResponse(response()));
+    const client = createDealAuditClient(
+      "https://audit.example.com",
+      "1001",
+      fetcher,
+    );
+    const query = {
+      lineItemSearch: " 50%_\\ support ",
+      eventType: "PROPERTY_CHANGED" as const,
+      field: "quantity" as const,
+      lineItemId: "2002",
+      from: "2026-03-28T23:00:00.000Z",
+      to: "2026-03-29T22:00:00.000Z",
+    };
+
+    await client.read("lineItems", "line-cursor", query);
+    await client.read("events", "event-cursor", query);
+    await client.read("initial", undefined, query);
+
+    expect(fetcher.mock.calls[0]?.[0]).toContain(
+      "lineItemSearch=%2050%25_%5C%20support%20",
+    );
+    expect(fetcher.mock.calls[0]?.[0]).not.toContain("eventType=");
+    expect(fetcher.mock.calls[1]?.[0]).not.toContain("lineItemSearch=");
+    expect(fetcher.mock.calls[1]?.[0]).toContain(
+      "eventType=PROPERTY_CHANGED&field=quantity&lineItemId=2002&from=2026-03-28T23%3A00%3A00.000Z&to=2026-03-29T22%3A00%3A00.000Z",
+    );
+    expect(fetcher.mock.calls[2]?.[0]).toContain("lineItemSearch=");
+    expect(fetcher.mock.calls[2]?.[0]).toContain("eventType=PROPERTY_CHANGED");
+  });
+
   it.each([
     [undefined, "LOCAL_CONFIGURATION"],
     ["http://audit.example.com", "LOCAL_CONFIGURATION"],

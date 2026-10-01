@@ -59,6 +59,9 @@ class DealAuditEndpointEnabledIntegrationTest {
         registry.add("hubspot.credentials.key-id", () -> "test-key-1");
         registry.add("hubspot.credentials.encryption-key", () ->
                 Base64.getEncoder().encodeToString(new byte[32]));
+        registry.add("line-item-watch.audit.cursor.active-key-id", () -> "test-cursor-1");
+        registry.add("line-item-watch.audit.cursor.active-key", () ->
+                Base64.getEncoder().encodeToString(new byte[32]));
     }
 
     @Autowired ApplicationContext applicationContext;

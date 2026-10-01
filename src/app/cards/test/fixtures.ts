@@ -67,6 +67,7 @@ export function event(eventId = "first", lineItemId = "2002"): AuditEvent {
   return {
     eventId: publicEventId(eventId),
     lineItemId,
+    latestRetainedLineItemName: value(`Item ${lineItemId}`),
     type: "PROPERTY_CHANGED",
     occurredAt: "2026-09-28T10:05:00Z",
     field: "quantity",

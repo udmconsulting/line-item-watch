@@ -36,4 +36,10 @@ public enum MonitoredLineItemProperty {
                 .filter(property -> property.providerName.equals(value))
                 .findFirst();
     }
+
+    public static Optional<MonitoredLineItemProperty> fromApiName(String value) {
+        return Arrays.stream(values())
+                .filter(property -> property.apiName.equals(value))
+                .findFirst();
+    }
 }

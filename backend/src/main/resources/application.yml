@@ -41,6 +41,12 @@ hubspot:
     encryption-key: ${HUBSPOT_CREDENTIAL_ENCRYPTION_KEY}
 
 line-item-watch:
+  audit:
+    cursor:
+      active-key-id: ${LINE_ITEM_WATCH_AUDIT_CURSOR_ACTIVE_KEY_ID:}
+      active-key: ${LINE_ITEM_WATCH_AUDIT_CURSOR_ACTIVE_KEY:}
+      previous-key-id: ${LINE_ITEM_WATCH_AUDIT_CURSOR_PREVIOUS_KEY_ID:}
+      previous-key: ${LINE_ITEM_WATCH_AUDIT_CURSOR_PREVIOUS_KEY:}
   processing:
     enabled: ${LINE_ITEM_WATCH_PROCESSING_ENABLED:false}
     poll-delay: ${LINE_ITEM_WATCH_PROCESSING_POLL_DELAY:1s}

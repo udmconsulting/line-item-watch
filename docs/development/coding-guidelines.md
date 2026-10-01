@@ -58,3 +58,15 @@ Domain and application types must not carry JPA annotations. JPA entities, Sprin
 ## Documentation as Definition of Done
 
 Update the relevant documentation in the same task whenever behavior, architecture, boundaries, providers, API, data model, configuration, operations, security/privacy, deployment, onboarding, retention, subprocessors, or extension mechanisms change. Add an ADR for a material architecture decision. Describe current reality and mark unresolved decisions `TBD`.
+
+## Out-of-scope discoveries and the product roadmap
+
+When implementation or review reveals a valuable product, UX, operational, or technical idea outside the current approved scope:
+
+- do not silently implement it or expand the phase;
+- do not leave it only in chat or a source-code TODO;
+- add or update it in [`docs/product/roadmap.md`](../product/roadmap.md);
+- assign a P0/P1/P2/P3 priority and explain its user value or rationale; and
+- record important dependencies, security/privacy implications, risks, and unresolved decisions.
+
+Roadmap capture is not implementation approval. Keep the active change focused and obtain explicit scope approval before moving a backlog item into implementation.

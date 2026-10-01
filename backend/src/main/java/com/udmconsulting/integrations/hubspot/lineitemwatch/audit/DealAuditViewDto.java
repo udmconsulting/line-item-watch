@@ -33,13 +33,17 @@ record DealAuditViewDto(
                 .toList();
         String nextLineItemCursor = view.lineItems().hasMore() && !view.lineItems().items().isEmpty()
                 ? cursorCodec.encodeLineItems(
-                        input.dealId(), view.lineItems().items().getLast().lineItemId())
+                        input.dealId(),
+                        input.lineItemFilter(),
+                        view.lineItems().items().getLast().lineItemId())
                 : null;
         DealAuditView.AuditEvent lastEvent = view.events().items().isEmpty()
                 ? null : view.events().items().getLast();
         String nextEventCursor = view.events().hasMore() && lastEvent != null
                 ? cursorCodec.encodeEvents(
-                        input.dealId(), new EventPosition(lastEvent.occurredAt(), lastEvent.semanticKey()))
+                        input.dealId(),
+                        input.eventFilter(),
+                        new EventPosition(lastEvent.occurredAt(), lastEvent.semanticKey()))
                 : null;
         return new DealAuditViewDto(
                 input.dealId().value(),
@@ -95,6 +99,7 @@ record DealAuditViewDto(
     record AuditEvent(
             String eventId,
             String lineItemId,
+            Value latestRetainedLineItemName,
             String type,
             Instant occurredAt,
             String field,
@@ -105,6 +110,7 @@ record DealAuditViewDto(
             return new AuditEvent(
                     DealAuditViewDto.eventId(source.semanticKey()),
                     source.lineItemId().value(),
+                    Value.from(source.latestRetainedLineItemName()),
                     source.type().name(),
                     source.occurredAt(),
                     source.property() == null ? null : source.property().apiName(),

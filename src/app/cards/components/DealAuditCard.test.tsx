@@ -2,7 +2,11 @@ import {
   Accordion,
   Alert,
   Button,
+  DateInput,
+  Input,
   LoadingButton,
+  SearchInput,
+  Select,
   StatusTag,
 } from "@hubspot/ui-extensions";
 import { createRenderer } from "@hubspot/ui-extensions/testing";
@@ -107,7 +111,7 @@ describe("DealAuditCard", () => {
     expect(text).toContain("Some current values are unknown");
     expect(text).toContain("Property changed");
     expect(text).toContain("Changed field: Quantity");
-    expect(text).toContain("Line Item: Support");
+    expect(text).toContain("Latest retained name: Item 2002 · Line Item 2002");
     expect(text).toContain("Line item created");
     expect(text).toContain("Associated with this Deal");
     expect(text).toContain("Disassociated from this Deal");
@@ -285,7 +289,7 @@ describe("DealAuditCard", () => {
       .mockReturnValueOnce(events.promise);
     const { renderer } = renderCard(fetcher);
     await renderer.waitFor(() =>
-      expect(renderer.findAll(LoadingButton)).toHaveLength(2),
+      expect(renderer.findAll(LoadingButton)).toHaveLength(3),
     );
 
     renderer
@@ -382,7 +386,9 @@ describe("DealAuditCard", () => {
         "Load more line items",
       ),
     );
-    renderer.find(LoadingButton).trigger("onClick");
+    renderer
+      .find(LoadingButton, (node) => node.text === "Load more line items")
+      .trigger("onClick");
 
     await renderer.waitFor(() => {
       expect(
@@ -436,5 +442,456 @@ describe("DealAuditCard", () => {
     expect(text).toContain("Preserved item");
     expect(text).toContain("Property changed");
     expect(text).not.toContain("private response detail");
+  });
+
+  it("submits server-side search explicitly and validates Unicode length", async () => {
+    const fetcher = vi
+      .fn<Fetcher>()
+      .mockResolvedValueOnce(jsonResponse(response()))
+      .mockResolvedValueOnce(
+        jsonResponse(response([lineItem("2010", "50%_\\ support")], [])),
+      );
+    const { renderer } = renderCard(fetcher);
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain("Support"),
+    );
+
+    renderer
+      .find(SearchInput, { name: "lineItemSearch" })
+      .trigger("onChange", "x" as unknown as (value: string) => void);
+    await renderer.waitFor(() =>
+      expect(
+        renderer.find(SearchInput, { name: "lineItemSearch" }).props.value,
+      ).toBe("x"),
+    );
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    renderer.find(Button, (node) => node.text === "Apply").trigger("onClick");
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain(
+        "between 2 and 100 characters",
+      ),
+    );
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    renderer
+      .find(SearchInput, { name: "lineItemSearch" })
+      .trigger(
+        "onChange",
+        " 50%_\\ support " as unknown as (value: string) => void,
+      );
+    await renderer.waitFor(() =>
+      expect(
+        renderer.find(SearchInput, { name: "lineItemSearch" }).props.value,
+      ).toBe(" 50%_\\ support "),
+    );
+    renderer.find(Button, (node) => node.text === "Apply").trigger("onClick");
+    await renderer.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    await renderer.waitFor(() =>
+      expect(renderer.find(StatusTag, { showRemoveIcon: true }).text).toContain(
+        "Name: 50%_\\ support",
+      ),
+    );
+    expect(fetcher.mock.calls[1]?.[0]).toContain(
+      "lineItemSearch=50%25_%5C%20support",
+    );
+  });
+
+  it("applies conjunctive event filters with portal-zone inclusive/exclusive dates", async () => {
+    const fetcher = vi
+      .fn<Fetcher>()
+      .mockResolvedValueOnce(jsonResponse(response()))
+      .mockResolvedValueOnce(jsonResponse(response([], [])));
+    const { renderer } = renderCard(fetcher);
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain("Search and filters"),
+    );
+
+    renderer
+      .find(Select, { name: "field" })
+      .trigger(
+        "onChange",
+        "quantity" as unknown as (value: string | number | boolean) => void,
+      );
+    renderer
+      .find(Input, { name: "lineItemId" })
+      .trigger("onChange", "2002" as unknown as (value: string) => void);
+    renderer.find(DateInput, { name: "fromDate" }).trigger("onChange", {
+      year: 2026,
+      month: 2,
+      date: 29,
+    } as unknown as (value: {
+      year: number;
+      month: number;
+      date: number;
+    }) => void);
+    renderer.find(DateInput, { name: "throughDate" }).trigger("onChange", {
+      year: 2026,
+      month: 2,
+      date: 29,
+    } as unknown as (value: {
+      year: number;
+      month: number;
+      date: number;
+    }) => void);
+    renderer.find(Button, (node) => node.text === "Apply").trigger("onClick");
+
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain(
+        "No matching changes",
+      ),
+    );
+    const url = fetcher.mock.calls[1]?.[0] ?? "";
+    expect(url).toContain("eventType=PROPERTY_CHANGED");
+    expect(url).toContain("field=quantity");
+    expect(url).toContain("lineItemId=2002");
+    expect(url).toContain("from=2026-03-28T23%3A00%3A00.000Z");
+    expect(url).toContain("to=2026-03-29T22%3A00%3A00.000Z");
+  });
+
+  it("scopes Show history to the exact Line Item and exposes removable filters", async () => {
+    const fetcher = vi
+      .fn<Fetcher>()
+      .mockResolvedValueOnce(jsonResponse(response()))
+      .mockResolvedValueOnce(jsonResponse(response([], [event("scoped")])))
+      .mockResolvedValueOnce(jsonResponse(response()));
+    const { renderer } = renderCard(fetcher);
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain("Show history"),
+    );
+    renderer
+      .find(SearchInput)
+      .trigger("onChange", "not applied" as unknown as (value: string) => void);
+    await renderer.waitFor(() =>
+      expect(renderer.find(SearchInput).props.value).toBe("not applied"),
+    );
+    renderer
+      .find(Button, (node) => node.text === "Show history")
+      .trigger("onClick");
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain("Line Item: 2002"),
+    );
+    expect(fetcher.mock.calls[1]?.[0]).toContain("lineItemId=2002");
+    expect(fetcher.mock.calls[1]?.[0]).not.toContain("lineItemSearch=");
+
+    renderer
+      .find(SearchInput)
+      .trigger(
+        "onChange",
+        "still not applied" as unknown as (value: string) => void,
+      );
+    await renderer.waitFor(() =>
+      expect(renderer.find(SearchInput).props.value).toBe("still not applied"),
+    );
+
+    const filterTag = renderer.find(
+      StatusTag,
+      (node) => node.text === "Line Item: 2002",
+    );
+    filterTag.trigger("onRemoveClick");
+    await renderer.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+    expect(fetcher.mock.calls[2]?.[0]).not.toContain("lineItemId=");
+    expect(fetcher.mock.calls[2]?.[0]).not.toContain("lineItemSearch=");
+  });
+
+  it("refreshes page one without polling and preserves visible data on failure", async () => {
+    const failedRefresh = deferred<Response>();
+    const fetcher = vi
+      .fn<Fetcher>()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          response(
+            [lineItem("2002", "Preserved")],
+            [],
+            page(10, true, "old-cursor"),
+          ),
+        ),
+      )
+      .mockReturnValueOnce(failedRefresh.promise);
+    const { renderer } = renderCard(fetcher);
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain("Preserved"),
+    );
+    await Promise.resolve();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    renderer
+      .find(LoadingButton, (node) => node.text === "Refresh")
+      .trigger("onClick");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[1]?.[0]).not.toContain("Cursor=");
+    expect(renderer.getRootNode().toString()).toContain("Preserved");
+    failedRefresh.reject(new Error("private refresh failure"));
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain(
+        "History could not be refreshed",
+      ),
+    );
+    expect(renderer.getRootNode().toString()).toContain("Preserved");
+    expect(renderer.getRootNode().toString()).not.toContain(
+      "private refresh failure",
+    );
+  });
+
+  it("keeps rapid refreshes generation-safe and blocks load-more during refresh", async () => {
+    const olderRefresh = deferred<Response>();
+    const newerRefresh = deferred<Response>();
+    const fetcher = vi
+      .fn<Fetcher>()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          response(
+            [lineItem("2002", "Original")],
+            [],
+            page(10, true, "old-page"),
+          ),
+        ),
+      )
+      .mockReturnValueOnce(olderRefresh.promise)
+      .mockReturnValueOnce(newerRefresh.promise);
+    const { renderer } = renderCard(fetcher);
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain(
+        "Load more line items",
+      ),
+    );
+
+    renderer
+      .find(LoadingButton, (node) => node.text === "Refresh")
+      .trigger("onClick");
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain("Refreshing"),
+    );
+    renderer
+      .find(LoadingButton, (node) => node.text === "Refreshing")
+      .trigger("onClick");
+    renderer
+      .find(LoadingButton, (node) => node.text === "Load more line items")
+      .trigger("onClick");
+    expect(fetcher).toHaveBeenCalledTimes(3);
+
+    newerRefresh.resolve(
+      jsonResponse(response([lineItem("2003", "Newest refresh")], [])),
+    );
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain("Newest refresh"),
+    );
+    olderRefresh.resolve(
+      jsonResponse(response([lineItem("2004", "Stale refresh")], [])),
+    );
+    await Promise.resolve();
+    expect(renderer.getRootNode().toString()).not.toContain("Stale refresh");
+  });
+
+  it("lets filter changes supersede refreshes and reset requests supersede filters", async () => {
+    const staleRefresh = deferred<Response>();
+    const staleFilter = deferred<Response>();
+    const fetcher = vi
+      .fn<Fetcher>()
+      .mockResolvedValueOnce(jsonResponse(response()))
+      .mockReturnValueOnce(staleRefresh.promise)
+      .mockReturnValueOnce(staleFilter.promise)
+      .mockResolvedValueOnce(
+        jsonResponse(response([lineItem("2005", "Reset result")], [])),
+      );
+    const { renderer } = renderCard(fetcher);
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain("Search and filters"),
+    );
+
+    renderer
+      .find(LoadingButton, (node) => node.text === "Refresh")
+      .trigger("onClick");
+    renderer
+      .find(SearchInput)
+      .trigger("onChange", "alpha" as unknown as (value: string) => void);
+    await renderer.waitFor(() =>
+      expect(renderer.find(SearchInput).props.value).toBe("alpha"),
+    );
+    renderer.find(Button, (node) => node.text === "Apply").trigger("onClick");
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain("Name: alpha"),
+    );
+    renderer
+      .find(Button, (node) => node.text === "Clear all")
+      .trigger("onClick");
+
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain("Reset result"),
+    );
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    staleFilter.resolve(
+      jsonResponse(response([lineItem("2006", "Stale filter")], [])),
+    );
+    staleRefresh.resolve(
+      jsonResponse(response([lineItem("2007", "Stale refresh")], [])),
+    );
+    await Promise.resolve();
+    expect(renderer.getRootNode().toString()).not.toContain("Stale filter");
+    expect(renderer.getRootNode().toString()).not.toContain("Stale refresh");
+  });
+
+  it("ignores a stale filter response after a newer query succeeds", async () => {
+    const stale = deferred<Response>();
+    const fetcher = vi
+      .fn<Fetcher>()
+      .mockResolvedValueOnce(jsonResponse(response()))
+      .mockReturnValueOnce(stale.promise)
+      .mockResolvedValueOnce(
+        jsonResponse(response([lineItem("2004", "Newest result")], [])),
+      );
+    const { renderer } = renderCard(fetcher);
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain("Search and filters"),
+    );
+    renderer
+      .find(SearchInput)
+      .trigger("onChange", "old" as unknown as (value: string) => void);
+    await renderer.waitFor(() =>
+      expect(renderer.find(SearchInput).props.value).toBe("old"),
+    );
+    renderer.find(Button, (node) => node.text === "Apply").trigger("onClick");
+    renderer
+      .find(SearchInput)
+      .trigger("onChange", "new" as unknown as (value: string) => void);
+    await renderer.waitFor(() =>
+      expect(renderer.find(SearchInput).props.value).toBe("new"),
+    );
+    renderer.find(Button, (node) => node.text === "Apply").trigger("onClick");
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain("Newest result"),
+    );
+    stale.resolve(
+      jsonResponse(response([lineItem("2003", "Stale result")], [])),
+    );
+    await Promise.resolve();
+    expect(renderer.getRootNode().toString()).not.toContain("Stale result");
+  });
+
+  it("offers a page-one restart when a cursor is rejected", async () => {
+    const fetcher = vi
+      .fn<Fetcher>()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          response(
+            [lineItem()],
+            [event("existing")],
+            page(10),
+            page(20, true, "rejected-cursor"),
+          ),
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            error: {
+              code: "INVALID_REQUEST",
+              correlationId: "8bd0d958-d3db-4214-b235-99fbcf70a812",
+            },
+          },
+          400,
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(response([lineItem()], [event("restarted")])),
+      );
+    const { renderer } = renderCard(fetcher);
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain("Load more changes"),
+    );
+    renderer
+      .find(LoadingButton, (node) => node.text === "Load more changes")
+      .trigger("onClick");
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain("Restart results"),
+    );
+    renderer
+      .find(Button, (node) => node.text === "Restart results")
+      .trigger("onClick");
+    await renderer.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+    expect(fetcher.mock.calls[2]?.[0]).not.toContain("eventsCursor=");
+  });
+
+  it("stops accumulating at 50 Line Items and 100 events with truthful notices", async () => {
+    const lineItems = (start: number) =>
+      Array.from({ length: 10 }, (_, offset) =>
+        lineItem(String(start + offset), `Item ${start + offset}`),
+      );
+    const events = (start: number) =>
+      Array.from({ length: 20 }, (_, offset) =>
+        event(`event_${start + offset}`, String(2000 + start + offset)),
+      );
+    const fetcher = vi
+      .fn<Fetcher>()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          response(
+            lineItems(1000),
+            events(0),
+            page(10, true, "line-1"),
+            page(20, true, "event-1"),
+          ),
+        ),
+      );
+    for (let index = 1; index <= 4; index += 1) {
+      fetcher.mockResolvedValueOnce(
+        jsonResponse(
+          response(
+            lineItems(1000 + index * 10),
+            [],
+            page(10, true, `line-${index + 1}`),
+            page(0),
+          ),
+        ),
+      );
+    }
+    for (let index = 1; index <= 4; index += 1) {
+      fetcher.mockResolvedValueOnce(
+        jsonResponse(
+          response(
+            [],
+            events(index * 20),
+            page(0),
+            page(20, true, `event-${index + 1}`),
+          ),
+        ),
+      );
+    }
+    const { renderer } = renderCard(fetcher);
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain(
+        "Load more line items",
+      ),
+    );
+    for (let index = 1; index <= 4; index += 1) {
+      renderer
+        .find(LoadingButton, (node) => node.text === "Load more line items")
+        .trigger("onClick");
+      await renderer.waitFor(() =>
+        expect(renderer.getRootNode().toString()).toContain(
+          `Item ${1000 + index * 10}`,
+        ),
+      );
+    }
+    expect(renderer.getRootNode().toString()).toContain(
+      "More retained Line Items may exist",
+    );
+    expect(renderer.findAll(Accordion)).toHaveLength(50);
+
+    for (let index = 1; index <= 4; index += 1) {
+      renderer
+        .find(LoadingButton, (node) => node.text === "Load more changes")
+        .trigger("onClick");
+      await renderer.waitFor(() =>
+        expect(renderer.getRootNode().toString()).toContain(
+          `Latest retained name: Item ${2000 + index * 20}`,
+        ),
+      );
+    }
+    await renderer.waitFor(() =>
+      expect(renderer.getRootNode().toString()).toContain(
+        "More retained changes may exist",
+      ),
+    );
+    expect(renderer.getRootNode().toString()).not.toContain("all results");
   });
 });

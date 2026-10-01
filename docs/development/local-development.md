@@ -69,7 +69,13 @@ The P.6 endpoint is off by default, so local startup needs no public read origin
 HUBSPOT_UI_EXTENSION_ENABLED=true
 HUBSPOT_UI_EXTENSION_PUBLIC_BASE_URI=https://<exact-public-host>
 HUBSPOT_UI_EXTENSION_APP_ID=<numeric-app-id>
+LINE_ITEM_WATCH_AUDIT_CURSOR_ACTIVE_KEY_ID=<safe-key-id>
+LINE_ITEM_WATCH_AUDIT_CURSOR_ACTIVE_KEY=<canonical-base64-32-byte-key>
 ```
+
+The cursor key is dedicated integrity material; do not reuse the OAuth client secret or credential-encryption key. During rotation, set `LINE_ITEM_WATCH_AUDIT_CURSOR_PREVIOUS_KEY_ID` and `LINE_ITEM_WATCH_AUDIT_CURSOR_PREVIOUS_KEY` only for the short window in which already-open cards may hold old cursors. The endpoint can remain disabled without cursor-key configuration.
+
+Migration `008` requires `pg_trgm`. PostgreSQL 18 classifies it as a trusted extension, but the migration role still needs database `CREATE` privilege unless a database/platform owner pre-provisions the extension. Confirm this before deployment; migration failure intentionally blocks name search rather than falling back to an unindexed production query.
 
 The base URI must be an origin only: no path, user info, query, or fragment. The endpoint is `GET /api/v1/line-item-watch/deals/{dealId}/audit`. It is not a local shared-secret API and cannot be called successfully without a current HubSpot v3 signature over the configured public URI and signed metadata. Do not use `Host` or forwarding headers as signature configuration. No CORS wildcard, cookie credential, provider lookup, or local rate limiter is introduced; production edge controls remain deployment work.
 
@@ -93,6 +99,16 @@ Install and verify the isolated frontend package from `src/app/cards` with `npm 
 ### Temporary Deal App Card live-acceptance runbook
 
 This workflow is for explicitly authorized acceptance in an isolated HubSpot account. It is not a production hosting design. A Cloudflare quick tunnel has a temporary hostname that can change every time it starts; never commit that hostname or use the tunnel as a permanent deployment target.
+
+In a repository with multiple Git worktrees, perform this preflight in the exact terminal that will start the backend and run HubSpot commands:
+
+```sh
+pwd
+git branch --show-current
+git rev-parse HEAD
+```
+
+The backend runtime, `hs project validate`, and `hs project upload` must all come from the same intended feature worktree. Stop if the path, branch, or commit is not the reviewed source.
 
 1. Confirm the local PostgreSQL runtime and the required HubSpot OAuth and credential-encryption configuration are already available. Start the backend or allow startup migrations only with explicit authorization. The P.6 application flow is externally read-only, but its PostgreSQL `REPEATABLE_READ` transaction must not be marked database read-only because connection and entitlement validation acquires shared row locks. That lock capability protects authorization state; it does not turn the endpoint into a business-data write.
 2. Start the temporary public origin and retain its generated HTTPS hostname:
@@ -119,6 +135,8 @@ This workflow is for explicitly authorized acceptance in an isolated HubSpot acc
    HUBSPOT_UI_EXTENSION_ENABLED=true \
    HUBSPOT_UI_EXTENSION_APP_ID=<APP_ID> \
    HUBSPOT_UI_EXTENSION_PUBLIC_BASE_URI=https://<TEMPORARY_HOST> \
+   LINE_ITEM_WATCH_AUDIT_CURSOR_ACTIVE_KEY_ID=<KEY_ID> \
+   LINE_ITEM_WATCH_AUDIT_CURSOR_ACTIVE_KEY=<BASE64_32_BYTE_KEY> \
    ./backend/mvnw -f backend/pom.xml spring-boot:run
    ```
 

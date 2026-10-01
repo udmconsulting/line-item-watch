@@ -134,7 +134,7 @@ class DealAuditErrorContractTest {
     private static TestContext context(
             HubSpotUiExtensionRequestAuthenticator authenticator,
             HubSpotDealAuditReadService readService) {
-        DealAuditCursorCodec codec = new DealAuditCursorCodec();
+        DealAuditCursorCodec codec = DealAuditCursorCodec.forTests();
         HubSpotDealAuditController controller = new HubSpotDealAuditController(
                 authenticator, new DealAuditQueryFactory(codec), readService, codec);
         Logger logger = (Logger) LoggerFactory.getLogger(DealAuditErrorHandler.class);

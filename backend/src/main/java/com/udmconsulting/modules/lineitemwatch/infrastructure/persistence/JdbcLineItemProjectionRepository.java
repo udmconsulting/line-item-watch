@@ -388,10 +388,13 @@ final class JdbcLineItemProjectionRepository {
                 jdbcTemplate.update("""
                         INSERT INTO line_item_watch_audit_event_deal_context (
                             tenant_id, connection_id, audit_event_id, external_deal_id,
-                            occurred_at, semantic_key
-                        ) VALUES (?, ?, ?, ?, ?, ?)
+                            occurred_at, semantic_key, line_item_id, event_type,
+                            property_name
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, tenantId.value(), connectionId.value(), eventId, dealId.value(),
-                        Timestamp.from(event.occurredAt()), event.semanticKey());
+                        Timestamp.from(event.occurredAt()), event.semanticKey(), lineItemId,
+                        event.type().name(),
+                        event.property() == null ? null : event.property().providerName());
             }
         }
 
