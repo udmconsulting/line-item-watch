@@ -92,11 +92,16 @@
     "BASELINE_ANCHORED": "Az előzmények teljes megfigyelt alapállapottal kezdődnek ekkor: {date}.",
     "SIGNAL_FIRST": "Az előzmények a legkorábbi megőrzött változási bizonyítékkal kezdődnek ekkor: {date}.",
     "unknownState": "Néhány jelenlegi érték ismeretlen.",
-    "disclaimer": "A megfigyelési dátum nem garantálja, hogy minden szolgáltatói változás rögzítésre került."
+    "disclaimer": "A megfigyelési dátum nem garantálja, hogy minden szolgáltatói változás rögzítésre került.",
+    "retentionLimited": "A megőrzési szabályok miatt csak a(z) {date} időponttól kezdődő bizonyítékok érhetők el."
   },
   "common": {
     "title": "Line Item Watch",
     "intro": "A Dealhez tartozó megőrzött Line Item állapotok és legutóbbi változások.",
+    "reliabilityWarningTitle": "Az audit megbízhatósága korlátozott",
+    "ingestionPausedWarning": "A megfigyelés szünetel. A megőrzött előzmények elérhetők, de a legutóbbi változások hiányozhatnak.",
+    "possibleGapWarning": "Az auditelőzményekben hiány lehet. A jelenlegi állapot ellenőrzése nem állítja vissza a hiányzó változásokat.",
+    "reconciliationDegradedWarning": "A jelenlegi állapot ellenőrzése nem érhető el vagy ellentmondásos; a megőrzött előzmények hiányosak lehetnek.",
     "lineItems": "Line Itemek",
     "recentChanges": "Legutóbbi változások",
     "filters": "Keresés és szűrők",

@@ -38,6 +38,7 @@ class ReadDealAuditTest {
                 stored("deleted", OBSERVED_FROM.plusSeconds(30), false, false,
                         LineItemAuditType.DEAL_ASSOCIATED, completeProperties())), false));
         when(repository.readEvents(query)).thenReturn(DealAuditViewRepository.StoredPage.empty());
+        when(repository.readReliability(query)).thenReturn(LineItemReliability.unknown());
 
         DealAuditView result = useCase.read(query);
 
@@ -61,6 +62,7 @@ class ReadDealAuditTest {
         values.put(MonitoredLineItemProperty.PRICE, ObservedValue.unknown());
         when(repository.readLineItems(query)).thenReturn(new DealAuditViewRepository.StoredPage<>(
                 List.of(stored("line-1", null, true, true, null, values)), false));
+        when(repository.readReliability(query)).thenReturn(LineItemReliability.unknown());
 
         DealAuditView.LineItemSummary item = useCase.read(query).lineItems().items().getFirst();
 
@@ -75,6 +77,7 @@ class ReadDealAuditTest {
     void zeroLimitSkipsOnlyItsIndependentPageDomain() {
         DealAuditQuery query = query(0, 1);
         when(repository.readEvents(query)).thenReturn(DealAuditViewRepository.StoredPage.empty());
+        when(repository.readReliability(query)).thenReturn(LineItemReliability.unknown());
 
         DealAuditView result = useCase.read(query);
 

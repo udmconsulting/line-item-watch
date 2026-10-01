@@ -15,6 +15,10 @@ public interface DealAuditViewRepository {
 
     StoredPage<DealAuditView.AuditEvent> readEvents(DealAuditQuery query);
 
+    default LineItemReliability readReliability(DealAuditQuery query) {
+        return LineItemReliability.unknown();
+    }
+
     record StoredPage<T>(List<T> items, boolean hasMore) {
         public StoredPage {
             items = List.copyOf(items);
@@ -32,6 +36,21 @@ public interface DealAuditViewRepository {
             boolean dealSetComplete,
             LineItemAuditType latestAssociationType,
             Map<MonitoredLineItemProperty, ObservedValue> properties,
-            LineItemHistoryCoverage historyCoverage) {
+            LineItemHistoryCoverage historyCoverage,
+            Instant retainedFrom,
+            boolean retentionLimited) {
+
+        public StoredLineItem(
+                ProviderObjectId lineItemId,
+                Instant deletedAt,
+                boolean requestedDealPresent,
+                boolean dealSetComplete,
+                LineItemAuditType latestAssociationType,
+                Map<MonitoredLineItemProperty, ObservedValue> properties,
+                LineItemHistoryCoverage historyCoverage) {
+            this(lineItemId, deletedAt, requestedDealPresent, dealSetComplete,
+                    latestAssociationType, properties, historyCoverage,
+                    historyCoverage.observedFrom(), false);
+        }
     }
 }

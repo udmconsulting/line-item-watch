@@ -2,6 +2,7 @@ package com.udmconsulting.modules.lineitemwatch.infrastructure.persistence;
 
 import com.udmconsulting.modules.lineitemwatch.application.ClaimedLineItemSignal;
 import com.udmconsulting.modules.lineitemwatch.application.LineItemSignalProcessingStore;
+import com.udmconsulting.modules.lineitemwatch.application.LineItemReliabilityStore;
 import com.udmconsulting.modules.lineitemwatch.application.SignalProcessingException;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemProjection;
 import com.udmconsulting.modules.lineitemwatch.domain.ProviderObjectId;
@@ -25,12 +26,15 @@ public class JdbcLineItemSignalProcessingStore implements LineItemSignalProcessi
 
     private final JdbcTemplate jdbcTemplate;
     private final JdbcLineItemProjectionRepository projectionRepository;
+    private final LineItemReliabilityStore reliabilityStore;
 
     public JdbcLineItemSignalProcessingStore(
             JdbcTemplate jdbcTemplate,
-            JdbcLineItemProjectionRepository projectionRepository) {
+            JdbcLineItemProjectionRepository projectionRepository,
+            LineItemReliabilityStore reliabilityStore) {
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate);
         this.projectionRepository = Objects.requireNonNull(projectionRepository);
+        this.reliabilityStore = Objects.requireNonNull(reliabilityStore);
     }
 
     @Override
@@ -40,6 +44,7 @@ public class JdbcLineItemSignalProcessingStore implements LineItemSignalProcessi
         jdbcTemplate.update("""
                 UPDATE line_item_watch_signal_processing
                 SET status = 'FAILED', failed_at = ?, last_error_code = ?,
+                    failure_disposition = 'RETRY_EXHAUSTED',
                     claim_token = NULL, claimed_at = NULL, lease_until = NULL,
                     updated_at = ?
                 WHERE attempt_count >= ?
@@ -106,6 +111,7 @@ public class JdbcLineItemSignalProcessingStore implements LineItemSignalProcessi
                     lease_until = ?,
                     processed_at = NULL,
                     failed_at = NULL,
+                    failure_disposition = NULL,
                     updated_at = ?
                 FROM candidate
                 WHERE p.signal_id = candidate.signal_id
@@ -164,6 +170,7 @@ public class JdbcLineItemSignalProcessingStore implements LineItemSignalProcessi
         int completed = jdbcTemplate.update("""
                 UPDATE line_item_watch_signal_processing
                 SET status = 'PROCESSED', processed_at = ?, last_error_code = NULL,
+                    failure_disposition = NULL,
                     claim_token = NULL, claimed_at = NULL, lease_until = NULL,
                     updated_at = ?
                 WHERE signal_id = ? AND tenant_id = ? AND connection_id = ?
@@ -174,6 +181,8 @@ public class JdbcLineItemSignalProcessingStore implements LineItemSignalProcessi
         if (completed != 1) {
             throw new SignalProcessingException(OperationalErrorCode.STALE_CLAIM, null);
         }
+        reliabilityStore.signalProcessed(
+                claim.tenantId(), claim.connectionId(), processedAt);
         boolean sparse = projection.properties().values().stream()
                 .anyMatch(value -> value.state()
                         == com.udmconsulting.modules.lineitemwatch.domain.ObservedValue.State.UNKNOWN)
@@ -197,17 +206,20 @@ public class JdbcLineItemSignalProcessingStore implements LineItemSignalProcessi
             updated = jdbcTemplate.update("""
                     UPDATE line_item_watch_signal_processing
                     SET status = 'FAILED', failed_at = ?, last_error_code = ?,
+                        failure_disposition = ?,
                         claim_token = NULL, claimed_at = NULL, lease_until = NULL,
                         updated_at = ?
                     WHERE signal_id = ? AND tenant_id = ? AND connection_id = ?
                       AND status = 'CLAIMED' AND claim_token = ?
-                    """, Timestamp.from(failedAt), errorCode.name(), Timestamp.from(failedAt),
+                    """, Timestamp.from(failedAt), errorCode.name(),
+                    retryable ? "RETRY_EXHAUSTED" : "PERMANENT", Timestamp.from(failedAt),
                     claim.signalId(), claim.tenantId().value(), claim.connectionId().value(),
                     claim.claimToken());
         } else {
             updated = jdbcTemplate.update("""
                     UPDATE line_item_watch_signal_processing
                     SET status = 'PENDING', next_attempt_at = ?, last_error_code = ?,
+                        failure_disposition = NULL,
                         claim_token = NULL, claimed_at = NULL, lease_until = NULL,
                         updated_at = ?
                     WHERE signal_id = ? AND tenant_id = ? AND connection_id = ?
@@ -215,6 +227,10 @@ public class JdbcLineItemSignalProcessingStore implements LineItemSignalProcessi
                     """, Timestamp.from(failedAt.plus(retryDelay)), errorCode.name(),
                     Timestamp.from(failedAt), claim.signalId(), claim.tenantId().value(),
                     claim.connectionId().value(), claim.claimToken());
+        }
+        if (terminal && updated == 1) {
+            reliabilityStore.markPossibleGap(
+                    claim.tenantId(), claim.connectionId(), failedAt);
         }
         return new FailureResult(updated == 1, terminal && updated == 1);
     }

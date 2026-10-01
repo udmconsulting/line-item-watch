@@ -13,7 +13,32 @@ public record LineItemProjectionCheckpoint(
         Instant providerUpdatedAt,
         Instant observedAt,
         Map<MonitoredLineItemProperty, ObservedValue> properties,
-        Set<ProviderObjectId> associatedDealIds) {
+        Set<ProviderObjectId> associatedDealIds,
+        LineItemHistoryCoverage historyCoverage,
+        Instant deletedAt) {
+
+    public LineItemProjectionCheckpoint(
+            SnapshotKind kind,
+            Instant providerCreatedAt,
+            Instant providerUpdatedAt,
+            Instant observedAt,
+            Map<MonitoredLineItemProperty, ObservedValue> properties,
+            Set<ProviderObjectId> associatedDealIds) {
+        this(kind, providerCreatedAt, providerUpdatedAt, observedAt,
+                properties, associatedDealIds, null, null);
+    }
+
+    public LineItemProjectionCheckpoint(
+            SnapshotKind kind,
+            Instant providerCreatedAt,
+            Instant providerUpdatedAt,
+            Instant observedAt,
+            Map<MonitoredLineItemProperty, ObservedValue> properties,
+            Set<ProviderObjectId> associatedDealIds,
+            LineItemHistoryCoverage historyCoverage) {
+        this(kind, providerCreatedAt, providerUpdatedAt, observedAt,
+                properties, associatedDealIds, historyCoverage, null);
+    }
 
     public LineItemProjectionCheckpoint {
         if (kind != SnapshotKind.BASELINE && kind != SnapshotKind.OBSERVED) {

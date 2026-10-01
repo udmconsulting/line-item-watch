@@ -92,11 +92,16 @@
     "BASELINE_ANCHORED": "History begins with a complete observed baseline on {date}.",
     "SIGNAL_FIRST": "History begins with the earliest retained change evidence on {date}.",
     "unknownState": "Some current values are unknown.",
-    "disclaimer": "The observation date does not guarantee that every provider change was captured."
+    "disclaimer": "The observation date does not guarantee that every provider change was captured.",
+    "retentionLimited": "Retention limits the available evidence to {date} and later."
   },
   "common": {
     "title": "Line Item Watch",
     "intro": "Retained Line Item state and recent changes for this Deal.",
+    "reliabilityWarningTitle": "Audit reliability is limited",
+    "ingestionPausedWarning": "Monitoring is paused. Retained history remains available, but recent changes may be missing.",
+    "possibleGapWarning": "This audit may contain a historical gap. A current-state check cannot recreate missing changes.",
+    "reconciliationDegradedWarning": "Current-state verification is unavailable or conflicting; retained history may be incomplete.",
     "lineItems": "Line items",
     "recentChanges": "Recent changes",
     "filters": "Search and filters",

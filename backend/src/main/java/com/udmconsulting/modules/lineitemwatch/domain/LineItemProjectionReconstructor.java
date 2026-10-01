@@ -87,9 +87,11 @@ public final class LineItemProjectionReconstructor {
                     .min(Instant::compareTo)
                     .orElseThrow();
         }
-        Instant coverageObservedFrom = state.baselineObservedFrom == null
-                ? earliestEvidence(checkpoints, signals)
-                : state.baselineObservedFrom;
+        Instant coverageObservedFrom = state.historyCoverage == null
+                ? (state.baselineObservedFrom == null
+                        ? earliestEvidence(checkpoints, signals)
+                        : state.baselineObservedFrom)
+                : state.historyCoverage.observedFrom();
         return new LineItemProjection(
                 state.properties,
                 state.presentDeals(),
@@ -99,9 +101,11 @@ public final class LineItemProjectionReconstructor {
                 observedAt,
                 state.deletedAt,
                 new LineItemHistoryCoverage(
-                        state.baselineObservedFrom == null
-                                ? LineItemHistoryCoverage.Mode.SIGNAL_FIRST
-                                : LineItemHistoryCoverage.Mode.BASELINE_ANCHORED,
+                        state.historyCoverage == null
+                                ? (state.baselineObservedFrom == null
+                                        ? LineItemHistoryCoverage.Mode.SIGNAL_FIRST
+                                        : LineItemHistoryCoverage.Mode.BASELINE_ANCHORED)
+                                : state.historyCoverage.mode(),
                         coverageObservedFrom),
                 state.events.stream().map(MutableEvent::immutable).toList());
     }
@@ -434,6 +438,7 @@ public final class LineItemProjectionReconstructor {
         private Instant observedAt;
         private Instant deletedAt;
         private Instant baselineObservedFrom;
+        private LineItemHistoryCoverage historyCoverage;
         private MutableEvent creationEvent;
 
         private State() {
@@ -446,7 +451,13 @@ public final class LineItemProjectionReconstructor {
             if (lifecycle == Lifecycle.DELETED) {
                 return;
             }
-            if (checkpoint.kind() == SnapshotKind.BASELINE && baselineObservedFrom == null) {
+            if (checkpoint.historyCoverage() != null) {
+                historyCoverage = checkpoint.historyCoverage();
+                baselineObservedFrom = checkpoint.historyCoverage().mode()
+                                == LineItemHistoryCoverage.Mode.BASELINE_ANCHORED
+                        ? checkpoint.historyCoverage().observedFrom()
+                        : null;
+            } else if (checkpoint.kind() == SnapshotKind.BASELINE && baselineObservedFrom == null) {
                 baselineObservedFrom = checkpoint.observedAt();
             }
             properties.clear();
@@ -455,10 +466,11 @@ public final class LineItemProjectionReconstructor {
             checkpoint.associatedDealIds().forEach(deal -> dealStates.put(deal, Membership.PRESENT));
             lastAssociationEvent.clear();
             dealSetComplete = true;
-            lifecycle = Lifecycle.PRESENT;
+            lifecycle = checkpoint.deletedAt() == null ? Lifecycle.PRESENT : Lifecycle.DELETED;
             providerCreatedAt = checkpoint.providerCreatedAt();
             providerUpdatedAt = checkpoint.providerUpdatedAt();
             observedAt = later(observedAt, checkpoint.observedAt());
+            deletedAt = checkpoint.deletedAt();
         }
 
         private void observe(List<LineItemChangeSignal> signals) {

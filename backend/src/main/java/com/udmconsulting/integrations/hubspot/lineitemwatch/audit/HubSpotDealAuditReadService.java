@@ -53,7 +53,7 @@ class HubSpotDealAuditReadService {
                 .lockForCommit(resolved.tenantId(), resolved.id())
                 .orElseThrow(AccountUnavailableException::new);
         if (connection.provider() != Provider.HUBSPOT
-                || connection.status() != ConnectionStatus.ACTIVE
+                || connection.status() == ConnectionStatus.DISCONNECTED
                 || !entitlementService.lockEnabledForCommit(
                         connection.tenantId(), ProductModule.LINE_ITEM_WATCH)) {
             throw new AccountUnavailableException();

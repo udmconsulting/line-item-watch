@@ -11,11 +11,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-public record DealAuditView(Page<LineItemSummary> lineItems, Page<AuditEvent> events) {
+public record DealAuditView(
+        Page<LineItemSummary> lineItems,
+        Page<AuditEvent> events,
+        LineItemReliability reliability) {
+
+    public DealAuditView(Page<LineItemSummary> lineItems, Page<AuditEvent> events) {
+        this(lineItems, events, LineItemReliability.unknown());
+    }
 
     public DealAuditView {
         Objects.requireNonNull(lineItems, "lineItems must not be null");
         Objects.requireNonNull(events, "events must not be null");
+        Objects.requireNonNull(reliability, "reliability must not be null");
     }
 
     public record Page<T>(List<T> items, boolean hasMore) {
@@ -67,10 +75,24 @@ public record DealAuditView(Page<LineItemSummary> lineItems, Page<AuditEvent> ev
     public record HistoryCoverage(
             LineItemHistoryCoverage.Mode mode,
             Instant observedFrom,
-            boolean hasUnknownState) {
+            boolean hasUnknownState,
+            Instant retainedFrom,
+            boolean retentionLimited) {
+
+        public HistoryCoverage(
+                LineItemHistoryCoverage.Mode mode,
+                Instant observedFrom,
+                boolean hasUnknownState) {
+            this(mode, observedFrom, hasUnknownState, observedFrom, false);
+        }
+
         public HistoryCoverage {
             Objects.requireNonNull(mode, "mode must not be null");
             Objects.requireNonNull(observedFrom, "observedFrom must not be null");
+            Objects.requireNonNull(retainedFrom, "retainedFrom must not be null");
+            if (retainedFrom.isBefore(observedFrom)) {
+                throw new IllegalArgumentException("retainedFrom must not precede observedFrom");
+            }
         }
     }
 

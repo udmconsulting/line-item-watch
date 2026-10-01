@@ -2,7 +2,7 @@
 
 ## Repository status
 
-The repository contains HubSpot app project metadata, read-only feasibility probes, and one backend Maven module under `backend/`. The backend implements Platform Core identity/entitlements, HubSpot OAuth installation, encrypted refresh credentials, on-demand refresh, internal uninstall, the internal one-Deal `LINE_ITEM_WATCH` observation use case, a conditional authenticated webhook receiver, an opt-in provider-free signal worker, and a conditional signed Deal audit read endpoint. It exposes install/callback HTTP endpoints but no public baseline, business administration, recovery, or disconnect endpoint.
+The repository contains HubSpot app project metadata, read-only feasibility probes, and one backend Maven module under `backend/`. The backend implements Platform Core identity/entitlements, HubSpot OAuth installation, encrypted refresh credentials, on-demand refresh, internal uninstall, the internal one-Deal `LINE_ITEM_WATCH` observation use case, a conditional authenticated webhook receiver, opt-in signal and reliability workers, tracked-scope reconciliation, provider-free replay/recovery, and a conditional signed Deal audit read endpoint. It exposes install/callback HTTP endpoints but no public baseline, business administration, recovery, or disconnect endpoint; reliability maintenance is service-operator CLI only.
 
 ## Prerequisites
 
@@ -32,6 +32,16 @@ SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
 
 The real local file is Git-ignored and must remain readable only by its developer (`chmod 600`). Its tracked sibling, `application-local.example.yaml`, contains only invalid placeholders and non-secret defaults. Environment variables remain supported and are the production configuration mechanism.
 
+The preferred local launch is `SPRING_PROFILES_ACTIVE=local` with the tracked
+JDBC datasource profile and the ignored file supplying only developer secrets
+and intentional local overrides. If the datasource is overridden, use
+Spring-compatible `spring.datasource.url`, username, and password settings, or
+set `DATABASE_URL` to a JDBC URL together with the corresponding database
+username and password variables. A CLI-style `postgres://` or `postgresql://`
+URI is not interchangeable with the JDBC datasource URL accepted by this
+application. Remove stale shell/task overrides instead of adding application
+fallbacks for malformed local settings.
+
 The local credential-encryption key must survive for as long as any local database credential encrypted with that key exists. Losing or changing the key requires controlled local credential re-establishment. Generating a different key under an existing key ID is invalid because the key ID identifies the encryption material used for the persisted ciphertext. Do not rely on ephemeral shell-only keys when local encrypted credentials outlive the shell session.
 
 Begin installation at `http://localhost:8080/integrations/hubspot/oauth/install`. The HubSpot app configuration must contain the matching callback URL. `HUBSPOT_API_BASE_URL` and `HUBSPOT_AUTHORIZATION_BASE_URL` are optional test overrides; HTTPS is mandatory except for explicit localhost/loopback development endpoints. `HUBSPOT_CONNECT_TIMEOUT` and `HUBSPOT_READ_TIMEOUT` optionally override the bounded `5s` and `20s` defaults. Without the local profile, database variables are also mandatory. Never commit, print, or add local secrets to shell startup files.
@@ -59,7 +69,7 @@ Processing is off by default and performs no HubSpot calls. Enable it only when 
 LINE_ITEM_WATCH_PROCESSING_ENABLED=true
 ```
 
-Optional settings are `LINE_ITEM_WATCH_PROCESSING_POLL_DELAY` (`1s`), `LINE_ITEM_WATCH_PROCESSING_MAX_PER_POLL` (`50`), `LINE_ITEM_WATCH_PROCESSING_LEASE_DURATION` (`2m`), `LINE_ITEM_WATCH_PROCESSING_MAX_ATTEMPTS` (`8`), `LINE_ITEM_WATCH_PROCESSING_BASE_BACKOFF` (`5s`), and `LINE_ITEM_WATCH_PROCESSING_MAX_BACKOFF` (`15m`). A terminal failure blocks later signals only for its Line Item. There is no P.5 recovery API; inspect the sanitized durable status and use controlled operator database tooling only after correcting the cause.
+Optional settings are `LINE_ITEM_WATCH_PROCESSING_POLL_DELAY` (`1s`), `LINE_ITEM_WATCH_PROCESSING_MAX_PER_POLL` (`50`), `LINE_ITEM_WATCH_PROCESSING_LEASE_DURATION` (`2m`), `LINE_ITEM_WATCH_PROCESSING_MAX_ATTEMPTS` (`8`), `LINE_ITEM_WATCH_PROCESSING_BASE_BACKOFF` (`5s`), and `LINE_ITEM_WATCH_PROCESSING_MAX_BACKOFF` (`15m`). A terminal failure blocks later signals only for its Line Item. Use the P.8 reliability operator CLI for bounded inspection and controlled compare-and-set requeue after correcting the cause; there is no public recovery API.
 
 ### Deal audit read configuration
 

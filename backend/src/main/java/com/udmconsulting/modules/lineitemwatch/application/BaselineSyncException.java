@@ -1,14 +1,24 @@
 package com.udmconsulting.modules.lineitemwatch.application;
 
+import java.time.Duration;
 import java.util.Objects;
 
 public final class BaselineSyncException extends RuntimeException {
 
     private final BaselineSyncFailure failure;
+    private final Duration retryAfter;
 
     public BaselineSyncException(BaselineSyncFailure failure) {
+        this(failure, null);
+    }
+
+    public BaselineSyncException(BaselineSyncFailure failure, Duration retryAfter) {
         super(diagnosticDescription(failure));
         this.failure = failure;
+        if (retryAfter != null && (retryAfter.isNegative() || retryAfter.isZero())) {
+            throw new IllegalArgumentException("retryAfter must be positive");
+        }
+        this.retryAfter = retryAfter;
     }
 
     public BaselineSyncFailure failure() {
@@ -17,6 +27,10 @@ public final class BaselineSyncException extends RuntimeException {
 
     public boolean retryable() {
         return failure.retryable();
+    }
+
+    public Duration retryAfter() {
+        return retryAfter;
     }
 
     private static String diagnosticDescription(BaselineSyncFailure failure) {

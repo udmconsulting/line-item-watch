@@ -9,6 +9,7 @@ import com.udmconsulting.modules.lineitemwatch.domain.LineItemObservation;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemProjection;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemProjectionCheckpoint;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemProjectionReconstructor;
+import com.udmconsulting.modules.lineitemwatch.domain.LineItemHistoryCoverage;
 import com.udmconsulting.modules.lineitemwatch.domain.LineItemPropertyValues;
 import com.udmconsulting.modules.lineitemwatch.domain.MonitoredLineItemProperty;
 import com.udmconsulting.modules.lineitemwatch.domain.ObservedValue;
@@ -199,6 +200,57 @@ final class JdbcLineItemProjectionRepository {
         return changed;
     }
 
+    CurrentDrift compareLatest(UUID lineItemId, LineItemObservation observation) {
+        List<CurrentDrift> rows = jdbcTemplate.query("""
+                SELECT
+                    ROW(name, quantity, unit_price, unit_discount, discount_percentage,
+                        billing_frequency, billing_start_date, billing_start_delay_unit,
+                        billing_start_delay_count, recurring_billing_period,
+                        provider_created_at, provider_updated_at, deleted_at)
+                    IS DISTINCT FROM
+                    ROW(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL) AS property_drift,
+                    ARRAY(
+                        SELECT external_deal_id
+                        FROM line_item_watch_snapshot_deal
+                        WHERE line_item_id = ? AND snapshot_kind = 'LATEST'
+                        ORDER BY external_deal_id
+                    )::text[] IS DISTINCT FROM ?::text[] AS association_drift,
+                    provider_updated_at AS current_provider_updated_at,
+                    observed_at AS current_observed_at
+                FROM line_item_watch_snapshot
+                WHERE line_item_id = ? AND snapshot_kind = 'LATEST'
+                """, (row, ignored) -> {
+                    boolean propertyDrift = row.getBoolean("property_drift");
+                    boolean associationDrift = row.getBoolean("association_drift");
+                    Timestamp currentUpdatedAt = row.getTimestamp("current_provider_updated_at");
+                    Timestamp currentObservedAt = row.getTimestamp("current_observed_at");
+                    boolean providerTimestampConflict = propertyDrift
+                            && currentUpdatedAt != null
+                            && !currentUpdatedAt.toInstant().isBefore(
+                                    observation.providerUpdatedAt());
+                    boolean concurrentObservation = (propertyDrift || associationDrift)
+                            && currentObservedAt != null
+                            && !currentObservedAt.toInstant().isBefore(observation.observedAt());
+                    boolean conflict = providerTimestampConflict || concurrentObservation;
+                    return new CurrentDrift(propertyDrift, associationDrift, conflict);
+                },
+                observation.name(), observation.quantity(), observation.unitPrice(),
+                observation.unitDiscount(), observation.discountPercentage(),
+                observation.billingFrequency(), sqlDate(observation.billingStart().date()),
+                observation.billingStart().delayUnit() == null
+                        ? null : observation.billingStart().delayUnit().name(),
+                observation.billingStart().delayCount(),
+                observation.recurringPeriod() == null
+                        ? null : observation.recurringPeriod().canonicalValue(),
+                Timestamp.from(observation.providerCreatedAt()),
+                Timestamp.from(observation.providerUpdatedAt()),
+                lineItemId,
+                observation.associatedDealIds().stream()
+                        .map(ProviderObjectId::value).sorted().toArray(String[]::new),
+                lineItemId);
+        return rows.stream().findFirst().orElse(new CurrentDrift(true, true, false));
+    }
+
     LineItemProjection rebuildLocked(
             TenantId tenantId,
             PlatformConnectionId connectionId,
@@ -210,8 +262,95 @@ final class JdbcLineItemProjectionRepository {
         LineItemProjection projection = reconstructor.reconstruct(
                 lineItem.externalId(), checkpoints, signals);
         writeLatest(tenantId, connectionId, lineItem.id(), projection);
-        writeAuditProjection(tenantId, connectionId, lineItem.id(), projection.auditEvents());
+        writeAuditProjection(tenantId, connectionId, lineItem.id(), projection.auditEvents(), null);
         return projection;
+    }
+
+    LineItemProjection rebuildFromRetainedEvidenceLocked(
+            TenantId tenantId,
+            PlatformConnectionId connectionId,
+            LockedLineItem lineItem) {
+        OptionalAnchor anchor = loadTrustedAnchor(lineItem.id());
+        List<LineItemProjectionCheckpoint> checkpoints = anchor.checkpoint() == null
+                ? loadCheckpoints(lineItem.id())
+                : List.of(anchor.checkpoint());
+        List<LineItemChangeSignal> signals = anchor.checkpoint() == null
+                ? loadProjectionSignals(tenantId, connectionId, lineItem.externalId(), null)
+                : loadProjectionSignalsAfter(
+                        tenantId, connectionId, lineItem.externalId(), anchor.watermark());
+        if (checkpoints.isEmpty() && signals.isEmpty()) {
+            throw new IllegalArgumentException("insufficient retained evidence");
+        }
+        LineItemProjection projection = reconstructor.reconstruct(
+                lineItem.externalId(), checkpoints, signals);
+        writeLatest(tenantId, connectionId, lineItem.id(), projection);
+        writeAuditProjection(
+                tenantId, connectionId, lineItem.id(), projection.auditEvents(),
+                anchor.watermark() == null ? anchor.preserveThrough() : anchor.watermark().occurredAt());
+        return projection;
+    }
+
+    private OptionalAnchor loadTrustedAnchor(UUID lineItemId) {
+        return jdbcTemplate.query("""
+                SELECT *
+                FROM line_item_watch_replay_anchor
+                WHERE line_item_id = ? AND trusted AND verified_at IS NOT NULL
+                ORDER BY anchor_at DESC, id DESC
+                LIMIT 1
+                """, (row, ignored) -> {
+                    UUID anchorId = row.getObject("id", UUID.class);
+                    Set<ProviderObjectId> deals = new LinkedHashSet<>(jdbcTemplate.queryForList("""
+                            SELECT external_deal_id
+                            FROM line_item_watch_replay_anchor_deal
+                            WHERE anchor_id = ?
+                            ORDER BY external_deal_id
+                            """, String.class, anchorId).stream()
+                            .map(ProviderObjectId::new).toList());
+                    LineItemProjectionCheckpoint checkpoint = new LineItemProjectionCheckpoint(
+                            SnapshotKind.OBSERVED,
+                            row.getTimestamp("provider_created_at").toInstant(),
+                            row.getTimestamp("provider_updated_at").toInstant(),
+                            row.getTimestamp("observed_at").toInstant(),
+                            checkpointProperties(row),
+                            deals,
+                            new LineItemHistoryCoverage(
+                                    LineItemHistoryCoverage.Mode.valueOf(
+                                            row.getString("history_coverage_mode")),
+                                    row.getTimestamp("history_observed_from").toInstant()),
+                            row.getTimestamp("deleted_at") == null
+                                    ? null : row.getTimestamp("deleted_at").toInstant());
+                    Timestamp occurredAt = row.getTimestamp("evidence_through_occurred_at");
+                    Watermark watermark = occurredAt == null ? null : new Watermark(
+                            occurredAt.toInstant(),
+                            row.getBytes("evidence_through_deduplication_key"),
+                            row.getObject("evidence_through_signal_id", UUID.class));
+                    return new OptionalAnchor(checkpoint, watermark,
+                            row.getTimestamp("observed_at").toInstant());
+                }, lineItemId).stream().findFirst().orElse(
+                        new OptionalAnchor(null, null, null));
+    }
+
+    private List<LineItemChangeSignal> loadProjectionSignalsAfter(
+            TenantId tenantId,
+            PlatformConnectionId connectionId,
+            ProviderObjectId lineItemId,
+            Watermark watermark) {
+        if (watermark == null) {
+            return loadProjectionSignals(tenantId, connectionId, lineItemId, null);
+        }
+        return jdbcTemplate.query("""
+                SELECT s.*
+                FROM line_item_watch_change_signal s
+                JOIN line_item_watch_signal_processing p ON p.signal_id = s.id
+                WHERE s.tenant_id = ? AND s.connection_id = ?
+                  AND s.external_line_item_id = ? AND p.status = 'PROCESSED'
+                  AND (s.occurred_at, s.provider_deduplication_key, s.id)
+                    > (?, ?, ?)
+                ORDER BY s.occurred_at, s.provider_deduplication_key, s.id
+                """, SIGNAL_MAPPER,
+                tenantId.value(), connectionId.value(), lineItemId.value(),
+                Timestamp.from(watermark.occurredAt()), watermark.deduplicationKey(),
+                watermark.signalId());
     }
 
     private List<LineItemProjectionCheckpoint> loadCheckpoints(UUID lineItemId) {
@@ -330,6 +469,13 @@ final class JdbcLineItemProjectionRepository {
                 timestamp(projection.deletedAt()),
                 projection.historyCoverage().mode().name(),
                 Timestamp.from(projection.historyCoverage().observedFrom()));
+        jdbcTemplate.update("""
+                INSERT INTO line_item_watch_line_item_reliability (
+                    tenant_id, connection_id, line_item_id, retained_from
+                ) VALUES (?, ?, ?, ?)
+                ON CONFLICT (line_item_id) DO NOTHING
+                """, tenantId.value(), connectionId.value(), lineItemId,
+                Timestamp.from(projection.historyCoverage().observedFrom()));
         replaceSnapshotDeals(
                 tenantId,
                 connectionId,
@@ -342,7 +488,8 @@ final class JdbcLineItemProjectionRepository {
             TenantId tenantId,
             PlatformConnectionId connectionId,
             UUID lineItemId,
-            List<LineItemAuditEvent> events) {
+            List<LineItemAuditEvent> events,
+            Instant preserveThrough) {
         Set<ByteArrayKey> retainedKeys = new HashSet<>();
         for (LineItemAuditEvent event : events) {
             retainedKeys.add(new ByteArrayKey(event.semanticKey()));
@@ -399,14 +546,18 @@ final class JdbcLineItemProjectionRepository {
         }
 
         List<ExistingAudit> existing = jdbcTemplate.query("""
-                SELECT id, semantic_key
+                SELECT id, semantic_key, occurred_at
                 FROM line_item_watch_audit_event
                 WHERE tenant_id = ? AND connection_id = ? AND line_item_id = ?
                 """, (row, ignored) -> new ExistingAudit(
-                        row.getObject("id", UUID.class), row.getBytes("semantic_key")),
+                        row.getObject("id", UUID.class), row.getBytes("semantic_key"),
+                        row.getTimestamp("occurred_at").toInstant()),
                 tenantId.value(), connectionId.value(), lineItemId);
         for (ExistingAudit audit : existing) {
             if (retainedKeys.contains(new ByteArrayKey(audit.semanticKey()))) {
+                continue;
+            }
+            if (preserveThrough != null && !audit.occurredAt().isAfter(preserveThrough)) {
                 continue;
             }
             Long missingSources = jdbcTemplate.queryForObject("""
@@ -516,7 +667,20 @@ final class JdbcLineItemProjectionRepository {
     record LockedLineItem(UUID id, ProviderObjectId externalId, boolean created) {
     }
 
-    private record ExistingAudit(UUID id, byte[] semanticKey) {
+    record CurrentDrift(
+            boolean propertyDrift, boolean associationDrift, boolean stateConflict) {
+    }
+
+    private record Watermark(Instant occurredAt, byte[] deduplicationKey, UUID signalId) {
+    }
+
+    private record OptionalAnchor(
+            LineItemProjectionCheckpoint checkpoint,
+            Watermark watermark,
+            Instant preserveThrough) {
+    }
+
+    private record ExistingAudit(UUID id, byte[] semanticKey, Instant occurredAt) {
     }
 
     private static final class ByteArrayKey {

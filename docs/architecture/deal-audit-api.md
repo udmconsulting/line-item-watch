@@ -6,7 +6,7 @@
 GET /api/v1/line-item-watch/deals/{dealId}/audit
 ```
 
-The endpoint exists only when `hubspot.ui-extension.enabled=true`. It accepts a HubSpot v3 signed fetch with exactly one signed `portalId`, `userId`, `userEmail`, and `appId`. Only the validated account/app boundary is trusted. The account resolves the internal Tenant and one `ACTIVE` HubSpot Platform Connection with an enabled `LINE_ITEM_WATCH` entitlement. `{dealId}` is a positive decimal provider ID and remains an untrusted selector within that resolved scope; it never resolves ownership and the API does not claim per-user or per-record HubSpot permission parity.
+The endpoint exists only when `hubspot.ui-extension.enabled=true`. It accepts a HubSpot v3 signed fetch with exactly one signed `portalId`, `userId`, `userEmail`, and `appId`. Only the validated account/app boundary is trusted. The account resolves the internal Tenant and one `ACTIVE` or `REAUTH_REQUIRED` HubSpot Platform Connection with an enabled `LINE_ITEM_WATCH` entitlement. `REAUTH_REQUIRED` serves retained provider-free data with degraded reliability metadata. `DISCONNECTED` and disabled entitlement remain blocked. `{dealId}` is a positive decimal provider ID and remains an untrusted selector within that resolved scope; it never resolves ownership and the API does not claim per-user or per-record HubSpot permission parity.
 
 Serving this API makes zero HubSpot/provider calls. A valid, entitled account receives `200` with empty sections when no local history exists for the selected Deal.
 
@@ -38,6 +38,15 @@ Each property/event value is truncated to at most 512 Unicode code points and re
 ```json
 {
   "dealId": "1001",
+  "reliability": {
+    "ingestionState": "OBSERVING",
+    "coverageState": "POSSIBLE_GAP",
+    "possibleGapSince": "2026-09-29T08:00:00Z",
+    "lastSignalObservedAt": "2026-09-30T10:05:00Z",
+    "lastSuccessfullyProcessedAt": "2026-09-30T10:05:01Z",
+    "lastReconciledAt": "2026-09-30T11:00:00Z",
+    "reconciliationOutcome": "SUCCEEDED"
+  },
   "lineItems": {
     "items": [
       {
@@ -64,7 +73,9 @@ Each property/event value is truncated to at most 512 Unicode code points and re
         "historyCoverage": {
           "mode": "SIGNAL_FIRST",
           "observedFrom": "2026-09-28T10:00:00Z",
-          "hasUnknownState": true
+          "hasUnknownState": true,
+          "retainedFrom": "2026-09-29T10:00:00Z",
+          "retentionLimited": true
         }
       }
     ],
@@ -96,7 +107,9 @@ Every monitored latest property is present. `UNKNOWN` means the retained project
 
 An existing Line Item has `currentMembership` of `PRESENT`, `ABSENT`, or `UNKNOWN`, and `membershipAtDeletion=null`. A deleted Line Item has `currentMembership=NOT_APPLICABLE` and preserves `membershipAtDeletion` as `PRESENT`, `ABSENT`, or `UNKNOWN`. `UNKNOWN` and `NOT_APPLICABLE` are never interchangeable. `historicalRelevance=true` means local evidence connects the Line Item to the requested Deal at or after its observation boundary, even if it was later disassociated or deleted.
 
-`historyCoverage.mode=BASELINE_ANCHORED` means a complete provider baseline is the initial known state; `observedFrom` is that baseline observation time. `SIGNAL_FIRST` means reconstruction began from retained processed signals/semantic evidence without a matching complete baseline; `observedFrom` is the earliest retained evidence actually used. `hasUnknownState` is true when any latest monitored property or the relevant Deal membership is unresolved.
+`historyCoverage.mode=BASELINE_ANCHORED` means a complete provider baseline is the initial known state; `observedFrom` is that baseline observation time. `SIGNAL_FIRST` means reconstruction began from retained processed signals/semantic evidence without a matching complete baseline; `observedFrom` is the earliest retained evidence actually used. `hasUnknownState` is true when any latest monitored property or the relevant Deal membership is unresolved. `retainedFrom` is the earliest policy-retained evidence boundary for that item, while `retentionLimited=true` says that retention—not provider completeness—limits the available evidence.
+
+`reliability.ingestionState` is `OBSERVING` or `PAUSED`; coverage is `NO_KNOWN_GAP` or `POSSIBLE_GAP`. A successful reconciliation can restore confidence in current state but does not clear a historical gap. `reconciliationOutcome` is one of `NOT_RUN`, `SUCCEEDED`, `DRIFT_REPAIRED`, `UNAVAILABLE`, or `CONFLICT`.
 
 No event earlier than `observedFrom` is returned. The timestamp means “Line Item Watch has evidence from this observation boundary.” It does not mean every provider change since that timestamp was captured, it is not a reconciliation guarantee, and neither mode represents complete history.
 
@@ -117,7 +130,7 @@ Errors are localization-neutral:
 |---:|---|---|
 | 400 | `INVALID_REQUEST` | Invalid Deal ID, limit, filter, duplicate/blank parameter, cursor integrity, or cursor/query mismatch |
 | 401 | `AUTHENTICATION_FAILED` | Invalid signed request, metadata, app ID, or timestamp |
-| 403 | `ACCOUNT_UNAVAILABLE` | Unknown/inactive/reauthentication-required/unentitled account, without Deal enumeration detail |
+| 403 | `ACCOUNT_UNAVAILABLE` | Unknown/disconnected/unentitled account, without Deal enumeration detail |
 | 500 | `INTERNAL_ERROR` | Internal invariant or unexpected failure |
 | 503 | `SERVICE_UNAVAILABLE` | Database access failure |
 
