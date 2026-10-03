@@ -1,0 +1,12 @@
+output "artifact_registry_repository" { value = module.environment.artifact_registry_repository }
+output "cloud_run_service_name" { value = module.environment.cloud_run_service_name }
+output "cloud_run_uri" { value = module.environment.cloud_run_uri }
+output "api_origin" { value = module.environment.api_origin }
+output "oauth_redirect_uri" { value = module.environment.oauth_redirect_uri }
+output "webhook_uri" { value = module.environment.webhook_uri }
+output "cloud_sql_instance_connection_name" { value = module.environment.cloud_sql_instance_connection_name }
+output "migration_job_name" { value = module.environment.migration_job_name }
+output "operator_job_name" { value = module.environment.operator_job_name }
+output "deployer_service_account" { value = module.environment.deployer_service_account }
+output "workload_identity_provider" { value = module.environment.workload_identity_provider }
+output "secret_container_names" { value = module.environment.secret_container_names }

@@ -116,3 +116,19 @@ hubspot.config.yml
 # Developer-local Spring Boot secrets (templates remain tracked)
 /backend/config/application-local.yaml
 /backend/config/application-local.yml
+
+# Playwright output and developer-local authenticated state
+/assurance/playwright-report/
+/assurance/test-results/
+/assurance/.auth/
+
+# Terraform local caches, state, plans, and account-specific inputs
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+
+# macOS metadata
+.DS_Store

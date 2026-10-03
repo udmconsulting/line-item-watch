@@ -4,6 +4,7 @@ This is an engineering posture document, not marketing or a compliance claim.
 
 ## Current / proven
 
+- The manual GCP bootstrap project owns a `STANDARD` `europe-west1` Terraform-state bucket with uniform bucket-level access, enforced public-access prevention, object versioning, and seven-day soft delete. It stores infrastructure metadata only; application runtime has no access, and staging/production do not exist.
 - The backend persists application-generated Tenant/connection identity, provider account identity, connection lifecycle, Product Module entitlement, OAuth state metadata, encrypted HubSpot refresh credentials, minimized `LINE_ITEM_WATCH` checkpoints/latest business state, normalized immutable Line Item change signals, durable processing state, and semantic audit projections in PostgreSQL.
 - Refresh credentials use AES-256-GCM with random nonces and authenticated provider/connection context. The 256-bit key and key ID are external mandatory configuration; plaintext refresh credentials exist only transiently during provider operations.
 - OAuth state stores a SHA-256 digest rather than the browser value, expires after 10 minutes, is consumed atomically, and becomes eligible for bounded opportunistic deletion after a 24-hour replay-detection period.
@@ -30,6 +31,8 @@ This is an engineering posture document, not marketing or a compliance claim.
 - The feasibility probes require credentials through environment variables rather than committed literals.
 - The accepted spike demonstrated read/history and webhook feasibility; it did not establish production security controls.
 - Architectural boundaries are checked with ArchUnit, while broader Private Beta security and operational controls remain requirements rather than implemented claims.
+- UI assurance targets fail closed and never default to production. PR jobs have no live credentials; staging and production use separate dedicated automation users/state. The production synthetic has no database access, uses one task/no retry, reads three explicit Secret Manager versions, writes label-free metrics/logs, and has create-only access to a 30-day private evidence bucket.
+- The production browser journey is read-only and restricted to a dedicated synthetic HubSpot fixture. Live trace/video/automatic screenshots are disabled, result evidence is sanitized/tested, and authentication failures cannot be classified as product outages. Optional AI diagnosis cannot receive raw evidence or determine pass/fail.
 
 No certification or regulatory compliance is claimed.
 
@@ -57,9 +60,9 @@ Use least privilege, individual rather than shared production credentials, contr
 
 ## TBD
 
-- hosting/database provider and processing region;
-- production managed key/secret service and rotation procedure;
-- logging, monitoring, and error-tracking vendors;
+- legal/security acceptance of selected GCP hosting/database/secrets/logging/monitoring in `europe-west1` and global-edge implications;
+- production secret payload injection, access review, and credential/cursor key-rotation acceptance (the active/previous credential rewrap procedure is implemented);
+- any separate error-tracking vendor;
 - production IAM and privileged-access mechanism;
 - backup retention, restore cadence, RPO, and RTO;
 - log and customer-data retention periods;

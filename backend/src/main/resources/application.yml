@@ -1,10 +1,14 @@
 spring:
   application:
     name: line-item-watch-backend
+  lifecycle:
+    timeout-per-shutdown-phase: ${APPLICATION_SHUTDOWN_TIMEOUT:20s}
   datasource:
     url: ${DATABASE_URL}
     username: ${DATABASE_USERNAME}
     password: ${DATABASE_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DATABASE_POOL_MAXIMUM_SIZE:10}
   jpa:
     open-in-view: false
     hibernate:
@@ -15,6 +19,42 @@ spring:
           time_zone: UTC
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
+
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+application:
+  runtime:
+    role: ${APPLICATION_RUNTIME_ROLE:LOCAL}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+      show-components: never
+      group:
+        liveness:
+          include: livenessState,ping
+        readiness:
+          include: readinessState,db
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  stackdriver:
+    metrics:
+      export:
+        enabled: ${GCP_METRICS_EXPORT_ENABLED:false}
+        project-id: ${GCP_PROJECT_ID:}
+        step: ${GCP_METRICS_EXPORT_STEP:60s}
 
 logging:
   pattern:
@@ -39,6 +79,8 @@ hubspot:
   credentials:
     key-id: ${HUBSPOT_CREDENTIAL_KEY_ID}
     encryption-key: ${HUBSPOT_CREDENTIAL_ENCRYPTION_KEY}
+    previous-key-id: ${HUBSPOT_CREDENTIAL_PREVIOUS_KEY_ID:}
+    previous-encryption-key: ${HUBSPOT_CREDENTIAL_PREVIOUS_ENCRYPTION_KEY:}
 
 line-item-watch:
   audit:
@@ -69,3 +111,93 @@ line-item-watch:
     max-backoff: ${LINE_ITEM_WATCH_RELIABILITY_MAX_BACKOFF:15m}
   operator:
     enabled: ${LINE_ITEM_WATCH_OPERATOR_ENABLED:false}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: service
+  liquibase:
+    enabled: false
+
+application:
+  runtime:
+    role: SERVICE
+
+line-item-watch:
+  operator:
+    enabled: false
+
+logging:
+  structured:
+    format:
+      console: logstash
+
+---
+spring:
+  config:
+    activate:
+      on-profile: migrate
+  main:
+    web-application-type: none
+    lazy-initialization: true
+  liquibase:
+    enabled: true
+
+application:
+  runtime:
+    role: MIGRATE
+
+line-item-watch:
+  processing:
+    enabled: false
+  reliability:
+    enabled: false
+  operator:
+    enabled: false
+
+logging:
+  structured:
+    format:
+      console: logstash
+
+---
+spring:
+  config:
+    activate:
+      on-profile: operator
+  main:
+    web-application-type: none
+  liquibase:
+    enabled: false
+
+application:
+  runtime:
+    role: OPERATOR
+
+line-item-watch:
+  processing:
+    enabled: false
+  reliability:
+    enabled: false
+  operator:
+    enabled: true
+
+logging:
+  structured:
+    format:
+      console: logstash
+
+---
+spring:
+  config:
+    activate:
+      on-profile: gcp
+  datasource:
+    url: jdbc:postgresql:///${DATABASE_NAME}
+    hikari:
+      data-source-properties:
+        socketFactory: com.google.cloud.sql.postgres.SocketFactory
+        cloudSqlInstance: ${CLOUD_SQL_INSTANCE_CONNECTION_NAME}
+        cloudSqlRefreshStrategy: lazy
+        ipTypes: PUBLIC

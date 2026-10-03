@@ -2,7 +2,7 @@
 
 ## Private Beta requirement
 
-Operational visibility is part of Private Beta readiness, even though no vendor has been selected or integrated. The system must make significant failures visible to the operator rather than depend on occasional dashboard inspection.
+Operational visibility is part of Private Beta readiness. GCP Cloud Logging and Cloud Monitoring are the selected deployment adapters; repository configuration exists but no environment telemetry resource or alert route has been provisioned. The existing billing-level budget notification is a separate bootstrap guardrail and is not a spending cap. The system must make significant failures visible to the operator rather than depend on occasional dashboard inspection.
 
 ## Required capabilities
 
@@ -18,7 +18,9 @@ Operational visibility is part of Private Beta readiness, even though no vendor 
 - provider API error and rate-limit visibility; and
 - database and service health visibility.
 
-Alert thresholds, on-call destination, runbooks, service-level indicators, dashboards, monitoring/logging/error vendors, and log retention are TBD. They must be chosen and tested before external Private Beta operation.
+Terraform supplies tunable starting alerts for public availability, service errors/latency/resources, database availability/resources/storage/connections, worker/reconciliation/webhook signals, certificate state, backups where observable, and budget thresholds. Notification destinations, final thresholds, service-level indicators, dashboards, and log retention remain provisioning/operations decisions and must be accepted before external Private Beta operation.
+
+The P.9 UI assurance delta adds a production browser result without slowing the one-minute backend readiness signal. Structured synthetic results use three fixed failure classes. One failure is WARNING; two consecutive product failures and a stale success heartbeat are CRITICAL. Authentication and harness failures remain distinct from product outage. The detailed architecture and privacy boundary are in [UI assurance architecture](ui-assurance.md).
 
 ## Context and privacy
 
@@ -30,7 +32,7 @@ Errors must be sanitized before they reach logs or monitoring services. `provide
 
 Typed domain/application failures remain separate from the shared operational registry. A logging or metrics boundary that needs aggregation maps them explicitly to `OperationalErrorCode`; merely adding a domain failure code does not expose it publicly or make it a metric tag. Diagnostic message wording is never used for that mapping.
 
-Micrometer records vendor-neutral `application.operation.duration` timers with exactly four bounded tags: `component`, `operation`, `outcome`, and `error_code`. Operation and error values come from closed application enums, never URLs, identifiers, cursors, or provider-controlled values. Existing `line_item_watch.processing.*` metrics remain the durable-worker operational series. P.8 adds closed-outcome reconciliation and replay counters plus reconciliation-age, suspected-gap, and exhausted-signal gauges. No metric label contains a Tenant, connection, Deal, Line Item, signal, or provider-controlled value.
+Micrometer records vendor-neutral `application.operation.duration` timers with exactly four bounded tags: `component`, `operation`, `outcome`, and `error_code`. Operation and error values come from closed application enums, never URLs, identifiers, cursors, or provider-controlled values. Existing `line_item_watch.processing.*` metrics remain the durable-worker operational series. P.8 adds closed-outcome reconciliation and replay counters plus reconciliation-age, suspected-gap, and exhausted-signal gauges. P.9 adds never-reconciled active connections, reconciliation last-success time/age, bounded webhook-ingestion failures, migration result, and key-rewrap remaining count. The optional Stackdriver registry is an isolated export adapter. No metric label contains a Tenant, connection, Deal, Line Item, signal, or provider-controlled value.
 
 ## Operational behavior
 
@@ -40,7 +42,7 @@ The implemented OAuth slice logs successful installation with its OAuth operatio
 
 Successful observation and webhook captures log internal `tenantRef`/`connectionRef` values and aggregate counts only. Webhook request failures use the shared correlation context and a fixed category. Known authentication/payload/database failures omit stacks; unexpected internal failures use the safe class/frame diagnostic. Logs exclude raw bodies, headers/signatures, portal and object IDs, property values, names, prices, quantities, discounts, and credentials. A completed batch records event/captured/duplicate/ignored counts.
 
-P.5 persists processing status, attempt count, due time, claim token/lease, completion time, and a fixed sanitized error code. Its structured logs contain internal `tenantRef`/`connectionRef`/`signalRef`, attempt, and outcome, but not claim tokens, external Line Item/Deal IDs, deduplication keys, properties, values, or exception messages. Micrometer records claims, successful/retried/terminal outcomes, processing duration, backlog, active claims, terminal failures, and oldest due age. Alert thresholds, dashboards, and delivery remain TBD, so enabling the worker in a production-like environment requires operator monitoring around these metrics and durable `FAILED` rows.
+P.5 persists processing status, attempt count, due time, claim token/lease, completion time, and a fixed sanitized error code. Its structured logs contain internal `tenantRef`/`connectionRef`/`signalRef`, attempt, and outcome, but not claim tokens, external Line Item/Deal IDs, deduplication keys, properties, values, or exception messages. Micrometer records claims, successful/retried/terminal outcomes, processing duration, backlog, active claims, terminal failures, and oldest due age. Production profiles emit JSON to stdout for Cloud Logging; local logs remain readable. Alert definitions exist, while thresholds/routes must be operationally accepted around these metrics and durable `FAILED` rows.
 
 Every P.6 Deal audit request uses the shared correlation foundation. Errors return that ID with a stable localization-neutral code; exception and database detail remain server-side. Success logs contain only internal Tenant/connection references and returned section counts; correlation is supplied by MDC. Rejection/failure logs use a fixed category and the safe throwable mechanism only for unexpected internal failures.
 

@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.Objects;
+import java.util.Optional;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
@@ -69,6 +70,16 @@ public final class AesGcmSecretProtector implements SecretProtector {
         } catch (GeneralSecurityException exception) {
             throw new IllegalStateException("Could not decrypt connection credential", exception);
         }
+    }
+
+    @Override
+    public String activeKeyId() {
+        return keyId;
+    }
+
+    @Override
+    public Optional<String> previousKeyId() {
+        return Optional.empty();
     }
 
     private Cipher cipher(

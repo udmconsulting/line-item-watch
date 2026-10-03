@@ -42,8 +42,10 @@ Authenticated ingress retains normalized immutable signals, including exact moni
 
 Use the shortest useful retention consistent with diagnosis, security, and reliability. Correlation/operation IDs and internal references are operational metadata, not identity proof. Avoid customer payloads; control access and apply expiry. Exact durations and treatment of tenant identifiers during deletion are TBD.
 
+Production browser failures may retain only sanitized `safe-evidence.json` objects for 30 days in the dedicated non-public evidence bucket; the runtime can create unique objects but cannot read or delete them. Deterministic mock traces/screenshots may remain in protected CI artifacts for seven days. Live browser storage state, trace, video, automatic screenshot, record URL, headers, bodies, and arbitrary console output are not retained. Renewed approval is required before expanding this evidence set.
+
 ### Backups
 
-Backups need defined retention, access controls, encryption, restore testing, and expiry. Deleted data may persist only until backup rotation under the published policy; restoration procedures must prevent deleted data from silently returning to active use. RPO, RTO, and retention are TBD.
+Production Terraform prepares automated Cloud SQL backups, seven days of transaction logs for PITR, 14 retained backups, EU placement where supported, deletion protection, and final-backup protection. Staging uses a cheaper seven-backup/three-day-log policy. These are unprovisioned starting values, not an accepted recovery promise. Access, encryption, restore testing, expiry, and restoration safeguards still apply; actual restore acceptance must record achieved RPO/RTO and prevent deleted data from silently returning to active use.
 
 Document and test each lifecycle before making corresponding customer promises.

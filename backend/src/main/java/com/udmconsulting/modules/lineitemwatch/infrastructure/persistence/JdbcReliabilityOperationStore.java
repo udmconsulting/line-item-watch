@@ -170,13 +170,27 @@ public class JdbcReliabilityOperationStore implements ReliabilityOperationStore 
                        WHERE coverage_state = 'POSSIBLE_GAP') AS gaps,
                     (SELECT COUNT(*) FROM line_item_watch_signal_processing
                      WHERE status = 'FAILED') AS exhausted,
+                    (SELECT COUNT(*)
+                     FROM line_item_watch_reliability_state state
+                     JOIN platform_connection connection
+                       ON connection.tenant_id = state.tenant_id
+                      AND connection.id = state.connection_id
+                     WHERE connection.status = 'ACTIVE'
+                       AND state.ingestion_state = 'OBSERVING'
+                       AND state.last_reconciled_at IS NULL) AS never_reconciled,
                     (SELECT MIN(last_reconciled_at)
                      FROM line_item_watch_reliability_state
-                     WHERE ingestion_state = 'OBSERVING') AS oldest_reconciled_at
+                     WHERE ingestion_state = 'OBSERVING') AS oldest_reconciled_at,
+                    (SELECT MAX(last_reconciled_at)
+                     FROM line_item_watch_reliability_state
+                     WHERE ingestion_state = 'OBSERVING') AS latest_reconciled_at
                 """, (row, ignored) -> new MetricSnapshot(
                         row.getLong("gaps"), row.getLong("exhausted"),
+                        row.getLong("never_reconciled"),
                         row.getTimestamp("oldest_reconciled_at") == null
-                                ? null : row.getTimestamp("oldest_reconciled_at").toInstant()));
+                                ? null : row.getTimestamp("oldest_reconciled_at").toInstant(),
+                        row.getTimestamp("latest_reconciled_at") == null
+                                ? null : row.getTimestamp("latest_reconciled_at").toInstant()));
     }
 
     @Override

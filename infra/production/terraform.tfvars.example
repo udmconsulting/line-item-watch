@@ -1,0 +1,28 @@
+organization_id = "656511895628"
+project_id       = "udm-liw-prod-unique-suffix"
+project_name     = "UDM LIW Production"
+environment      = "production"
+region           = "europe-west1"
+github_repository = "owner/repository"
+
+# Supply account-specific billing metadata locally, never in this file:
+# set TF_VAR_billing_account_id in the invoking shell or protected runner.
+
+provision_runtime = false
+deploy_service    = false
+
+production_cloud_run_min_instances = 0
+production_domain                  = "api.lineitemwatch.com"
+dns_zone_name                      = null
+notification_channel_ids           = []
+create_environment_budget          = false
+monthly_budget_amount              = 155
+
+enable_production_synthetic                  = false
+synthetic_schedule                            = "*/10 * * * *"
+synthetic_consecutive_failure_window_seconds = 660
+synthetic_freshness_seconds                  = 1200
+
+# Runtime phase only: supply image_digest, HubSpot IDs, active key IDs, and the
+# exact secret_versions consumed by the enabled jobs/service. Synthetic inputs
+# are required only after the separately authorized synthetic phase is enabled.

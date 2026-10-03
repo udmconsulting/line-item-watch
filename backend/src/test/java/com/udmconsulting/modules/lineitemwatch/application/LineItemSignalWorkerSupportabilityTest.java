@@ -10,6 +10,7 @@ import com.udmconsulting.platform.connection.domain.PlatformConnectionId;
 import com.udmconsulting.platform.supportability.ApplicationOperationMetrics;
 import com.udmconsulting.platform.supportability.DiagnosticContext;
 import com.udmconsulting.platform.supportability.OperationalErrorCode;
+import com.udmconsulting.platform.runtime.WorkerShutdownSignal;
 import com.udmconsulting.platform.tenant.domain.TenantId;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
@@ -74,6 +75,7 @@ class LineItemSignalWorkerSupportabilityTest {
                         Duration.ofSeconds(5), Duration.ofMinutes(15)),
                 new LineItemProcessingMetrics(registry),
                 new ApplicationOperationMetrics(registry),
+                startedShutdownSignal(),
                 Clock.fixed(now, ZoneOffset.UTC));
 
         Logger logger = (Logger) LoggerFactory.getLogger(LineItemSignalWorker.class);
@@ -125,12 +127,19 @@ class LineItemSignalWorkerSupportabilityTest {
                         Duration.ofSeconds(5), Duration.ofMinutes(15)),
                 new LineItemProcessingMetrics(registry),
                 new ApplicationOperationMetrics(registry),
+                startedShutdownSignal(),
                 Clock.fixed(now, ZoneOffset.UTC));
 
         worker.poll();
 
         assertThat(store.recordedErrorCode).isEqualTo(expectedCode);
         assertThat(store.recordedRetryable).isEqualTo(expectedRetryable);
+    }
+
+    private static WorkerShutdownSignal startedShutdownSignal() {
+        WorkerShutdownSignal signal = new WorkerShutdownSignal();
+        signal.start();
+        return signal;
     }
 
     private static final class StubStore implements LineItemSignalProcessingStore {

@@ -12,6 +12,9 @@ import com.udmconsulting.platform.connection.domain.PlatformConnection;
 import com.udmconsulting.platform.connection.domain.Provider;
 import com.udmconsulting.platform.credential.application.ConcurrentCredentialChangeException;
 import com.udmconsulting.platform.credential.application.ConnectionCredentialService;
+import com.udmconsulting.platform.credential.application.CredentialKeyRotation;
+import com.udmconsulting.platform.credential.application.SecretContext;
+import com.udmconsulting.platform.credential.infrastructure.crypto.AesGcmSecretProtector;
 import com.udmconsulting.platform.entitlement.application.EntitlementService;
 import com.udmconsulting.platform.module.domain.ProductModule;
 import com.udmconsulting.platform.tenant.application.TenantService;
@@ -59,6 +62,12 @@ class ApplicationActivityAuditIntegrationTest {
         registry.add("hubspot.credentials.key-id", () -> "test-key-1");
         registry.add("hubspot.credentials.encryption-key", () ->
                 Base64.getEncoder().encodeToString(new byte[32]));
+        registry.add("hubspot.credentials.previous-key-id", () -> "test-key-0");
+        registry.add("hubspot.credentials.previous-encryption-key", () -> {
+            byte[] previous = new byte[32];
+            java.util.Arrays.fill(previous, (byte) 1);
+            return Base64.getEncoder().encodeToString(previous);
+        });
     }
 
     @Autowired
@@ -69,6 +78,9 @@ class ApplicationActivityAuditIntegrationTest {
 
     @Autowired
     private ConnectionCredentialService credentialService;
+
+    @Autowired
+    private CredentialKeyRotation keyRotation;
 
     @Autowired
     private EntitlementService entitlementService;
@@ -212,19 +224,7 @@ class ApplicationActivityAuditIntegrationTest {
 
     @Test
     void auditInsertFailureRollsBackInstallationState() {
-        jdbcTemplate.execute("""
-                CREATE FUNCTION fail_application_activity_insert() RETURNS trigger
-                LANGUAGE plpgsql AS $$
-                BEGIN
-                    RAISE EXCEPTION 'activity audit insert intentionally blocked';
-                END;
-                $$
-                """);
-        jdbcTemplate.execute("""
-                CREATE TRIGGER fail_application_activity_insert
-                BEFORE INSERT ON application_activity_audit
-                FOR EACH ROW EXECUTE FUNCTION fail_application_activity_insert()
-                """);
+        createFailureTrigger();
         String account = "rollback-" + UUID.randomUUID();
 
         assertThatThrownBy(() ->
@@ -235,6 +235,53 @@ class ApplicationActivityAuditIntegrationTest {
                 .isEmpty();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM application_activity_audit", Long.class)).isZero();
+    }
+
+    @Test
+    void credentialRewrapIsTenantIsolatedAuditedAndIdempotent() {
+        var target = installationStore.finalizeInstallation(
+                "rewrap-target-" + UUID.randomUUID(), "target-refresh", SCOPES);
+        var other = installationStore.finalizeInstallation(
+                "rewrap-other-" + UUID.randomUUID(), "other-refresh", SCOPES);
+        PlatformConnection targetConnection = connectionService.findForTenant(
+                target.tenantId(), target.connectionId()).orElseThrow();
+        storeWithPreviousKey(targetConnection, "target-refresh");
+
+        var first = keyRotation.rewrap(target.tenantId(), 10, operatorActivity());
+        var second = keyRotation.rewrap(target.tenantId(), 10, operatorActivity());
+
+        assertThat(first).isEqualTo(new CredentialKeyRotation.RewrapResult(1, 0, 0));
+        assertThat(second).isEqualTo(new CredentialKeyRotation.RewrapResult(0, 0, 0));
+        assertThat(keyId(target.connectionId().value())).isEqualTo("test-key-1");
+        assertThat(keyId(other.connectionId().value())).isEqualTo("test-key-1");
+        assertThat(credentialService.load(targetConnection).refreshToken())
+                .isEqualTo("target-refresh");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM application_activity_audit
+                WHERE tenant_id = ? AND connection_id = ?
+                  AND action = 'CREDENTIAL_KEY_REWRAPPED'
+                """, Long.class, target.tenantId().value(), target.connectionId().value()))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void credentialAndAuditRewrapAreAtomic() {
+        var target = installationStore.finalizeInstallation(
+                "rewrap-rollback-" + UUID.randomUUID(), "rollback-refresh", SCOPES);
+        PlatformConnection connection = connectionService.findForTenant(
+                target.tenantId(), target.connectionId()).orElseThrow();
+        storeWithPreviousKey(connection, "rollback-refresh");
+        createFailureTrigger();
+
+        assertThatThrownBy(() ->
+                keyRotation.rewrap(target.tenantId(), 10, operatorActivity()))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(keyId(target.connectionId().value())).isEqualTo("test-key-0");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM application_activity_audit
+                WHERE action = 'CREDENTIAL_KEY_REWRAPPED'
+                """, Long.class)).isZero();
     }
 
     @Test
@@ -255,6 +302,56 @@ class ApplicationActivityAuditIntegrationTest {
     private PlatformConnection connection(String account) {
         return connectionService.resolve(Provider.HUBSPOT, new ExternalAccountId(account))
                 .orElseThrow();
+    }
+
+    private void storeWithPreviousKey(PlatformConnection connection, String plaintext) {
+        byte[] previousKey = new byte[32];
+        java.util.Arrays.fill(previousKey, (byte) 1);
+        var encrypted = new AesGcmSecretProtector("test-key-0", previousKey).protect(
+                plaintext, new SecretContext(Provider.HUBSPOT, connection.id()));
+        Long generation = jdbcTemplate.queryForObject("""
+                SELECT credential_generation FROM platform_connection WHERE id = ?
+                """, Long.class, connection.id().value());
+        int changed = jdbcTemplate.update("""
+                UPDATE connection_credential
+                SET cipher_version = ?, key_id = ?, nonce = ?, ciphertext = ?
+                WHERE connection_id = ? AND credential_generation = ?
+                """, encrypted.cipherVersion(), encrypted.keyId(), encrypted.nonce(),
+                encrypted.ciphertext(), connection.id().value(),
+                generation);
+        assertThat(changed).isEqualTo(1);
+    }
+
+    private String keyId(UUID connectionId) {
+        return jdbcTemplate.queryForObject("""
+                SELECT key_id FROM connection_credential WHERE connection_id = ?
+                """, String.class, connectionId);
+    }
+
+    private static com.udmconsulting.platform.activity.application.ActivityContext
+            operatorActivity() {
+        return new com.udmconsulting.platform.activity.application.ActivityContext(
+                new com.udmconsulting.platform.activity.domain.ActivityActor(
+                        com.udmconsulting.platform.activity.domain.ActivityActorType.OPERATOR,
+                        com.udmconsulting.platform.activity.domain.ActivityActorSource.APPLICATION,
+                        "p9-key-rotation-test"),
+                UUID.randomUUID());
+    }
+
+    private void createFailureTrigger() {
+        jdbcTemplate.execute("""
+                CREATE FUNCTION fail_application_activity_insert() RETURNS trigger
+                LANGUAGE plpgsql AS $$
+                BEGIN
+                    RAISE EXCEPTION 'activity audit insert intentionally blocked';
+                END;
+                $$
+                """);
+        jdbcTemplate.execute("""
+                CREATE TRIGGER fail_application_activity_insert
+                BEFORE INSERT ON application_activity_audit
+                FOR EACH ROW EXECUTE FUNCTION fail_application_activity_insert()
+                """);
     }
 
     private List<String> actions() {

@@ -22,6 +22,10 @@ hubspot:
   credentials:
     key-id: local-acceptance-2
     encryption-key: __SET_LOCAL_BASE64_AES_256_KEY__
+    # Optional bounded rotation window. Remove only after rewrap verification
+    # and the chosen rollback/incident window have both completed.
+    previous-key-id:
+    previous-encryption-key:
 
 line-item-watch:
   audit:

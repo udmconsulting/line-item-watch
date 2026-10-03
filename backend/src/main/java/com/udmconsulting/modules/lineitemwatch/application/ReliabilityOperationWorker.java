@@ -7,6 +7,9 @@ import com.udmconsulting.modules.lineitemwatch.domain.ProviderObjectId;
 import com.udmconsulting.platform.connection.application.PlatformConnectionService;
 import com.udmconsulting.platform.connection.domain.PlatformConnection;
 import com.udmconsulting.platform.supportability.OperationalErrorCode;
+import com.udmconsulting.platform.runtime.ConditionalOnRuntimeRole;
+import com.udmconsulting.platform.runtime.RuntimeRole;
+import com.udmconsulting.platform.runtime.WorkerShutdownSignal;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -18,6 +21,7 @@ import org.springframework.stereotype.Component;
 @Component
 @ConditionalOnProperty(
         prefix = "line-item-watch.reliability", name = "enabled", havingValue = "true")
+@ConditionalOnRuntimeRole({RuntimeRole.LOCAL, RuntimeRole.SERVICE})
 public final class ReliabilityOperationWorker {
 
     private final ReliabilityOperationStore store;
@@ -25,6 +29,7 @@ public final class ReliabilityOperationWorker {
     private final PlatformConnectionService connections;
     private final ReliabilityProcessingProperties properties;
     private final ReliabilityMetrics metrics;
+    private final WorkerShutdownSignal shutdownSignal;
     private final Clock clock;
 
     public ReliabilityOperationWorker(
@@ -33,18 +38,26 @@ public final class ReliabilityOperationWorker {
             PlatformConnectionService connections,
             ReliabilityProcessingProperties properties,
             ReliabilityMetrics metrics,
+            WorkerShutdownSignal shutdownSignal,
             Clock clock) {
         this.store = Objects.requireNonNull(store);
         this.providerSource = Objects.requireNonNull(providerSource);
         this.connections = Objects.requireNonNull(connections);
         this.properties = Objects.requireNonNull(properties);
         this.metrics = Objects.requireNonNull(metrics);
+        this.shutdownSignal = Objects.requireNonNull(shutdownSignal);
         this.clock = Objects.requireNonNull(clock);
     }
 
     @Scheduled(fixedDelayString = "${line-item-watch.reliability.poll-delay:5s}")
     public void poll() {
+        if (!shutdownSignal.acceptingClaims()) {
+            return;
+        }
         for (int index = 0; index < properties.maxPerPoll(); index++) {
+            if (!shutdownSignal.acceptingClaims()) {
+                return;
+            }
             Instant now = clock.instant();
             var claimed = store.claimNext(now, properties.leaseDuration());
             if (claimed.isEmpty()) {
@@ -58,6 +71,9 @@ public final class ReliabilityOperationWorker {
             fixedDelayString = "${line-item-watch.reliability.schedule-delay:1m}",
             initialDelayString = "${line-item-watch.reliability.schedule-delay:1m}")
     public void scheduleTrackedReconciliation() {
+        if (!shutdownSignal.acceptingClaims()) {
+            return;
+        }
         Instant now = clock.instant();
         store.scheduleDueReconciliations(
                 now.minus(properties.reconciliationInterval()),
@@ -66,6 +82,10 @@ public final class ReliabilityOperationWorker {
         ReliabilityOperationStore.MetricSnapshot snapshot = store.metricSnapshot();
         metrics.updateCounts(snapshot.suspectedGaps(), snapshot.exhaustedSignals());
         metrics.updateAge(snapshot.oldestReconciledAt(), now);
+        metrics.updateReconciliationState(
+                snapshot.neverReconciledActiveConnections(),
+                snapshot.latestReconciledAt(),
+                now);
     }
 
     void execute(ClaimedOperation operation, Instant now) {

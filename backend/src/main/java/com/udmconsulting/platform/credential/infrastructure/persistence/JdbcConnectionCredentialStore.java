@@ -7,9 +7,11 @@ import com.udmconsulting.platform.activity.domain.ActivityAction;
 import com.udmconsulting.platform.activity.domain.ActivityResourceType;
 import com.udmconsulting.platform.connection.domain.PlatformConnectionId;
 import com.udmconsulting.platform.connection.domain.ConnectionStatus;
+import com.udmconsulting.platform.connection.domain.Provider;
 import com.udmconsulting.platform.credential.application.ConnectionCredentialStore;
 import com.udmconsulting.platform.credential.domain.ConnectionCredential;
 import com.udmconsulting.platform.credential.domain.EncryptedSecret;
+import com.udmconsulting.platform.tenant.domain.TenantId;
 import java.sql.Array;
 import java.sql.PreparedStatement;
 import java.time.Clock;
@@ -130,6 +132,92 @@ public class JdbcConnectionCredentialStore implements ConnectionCredentialStore 
                 ConnectionStatus.DISCONNECTED,
                 ActivityAction.PLATFORM_CONNECTION_DISCONNECTED,
                 activityContext);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CredentialRewrapCandidate> findForRewrap(
+            TenantId tenantId, String sourceKeyId, int limit) {
+        if (limit < 1 || limit > 1_000) {
+            throw new IllegalArgumentException("rewrap limit must be between 1 and 1000");
+        }
+        return jdbcTemplate.query("""
+                SELECT c.connection_id, p.provider, c.credential_generation,
+                       c.cipher_version, c.key_id, c.nonce, c.ciphertext
+                FROM connection_credential c
+                JOIN platform_connection p ON p.id = c.connection_id
+                WHERE p.tenant_id = ? AND c.key_id = ?
+                  AND c.credential_generation = p.credential_generation
+                ORDER BY c.connection_id
+                LIMIT ?
+                """, (row, ignored) -> new CredentialRewrapCandidate(
+                        tenantId,
+                        new PlatformConnectionId(row.getObject("connection_id", UUID.class)),
+                        Provider.valueOf(row.getString("provider")),
+                        row.getLong("credential_generation"),
+                        new EncryptedSecret(
+                                row.getShort("cipher_version"),
+                                row.getString("key_id"),
+                                row.getBytes("nonce"),
+                                row.getBytes("ciphertext"))),
+                tenantId.value(), sourceKeyId, limit);
+    }
+
+    @Override
+    @Transactional
+    public boolean rewrapIfUnchanged(
+            CredentialRewrapCandidate candidate,
+            EncryptedSecret replacement,
+            ActivityContext activityContext) {
+        EncryptedSecret current = candidate.encryptedSecret();
+        int changed = jdbcTemplate.update("""
+                UPDATE connection_credential c
+                SET cipher_version = ?, key_id = ?, nonce = ?, ciphertext = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE c.connection_id = ?
+                  AND c.credential_generation = ?
+                  AND c.key_id = ?
+                  AND c.nonce = ?
+                  AND c.ciphertext = ?
+                  AND EXISTS (
+                      SELECT 1 FROM platform_connection p
+                      WHERE p.id = c.connection_id AND p.tenant_id = ?
+                        AND p.credential_generation = c.credential_generation
+                  )
+                """, replacement.cipherVersion(), replacement.keyId(),
+                replacement.nonce(), replacement.ciphertext(),
+                candidate.connectionId().value(), candidate.credentialGeneration(),
+                current.keyId(), current.nonce(), current.ciphertext(),
+                candidate.tenantId().value());
+        if (changed == 0) {
+            return false;
+        }
+        if (changed != 1) {
+            throw new IllegalStateException("Credential rewrap changed an unexpected row count");
+        }
+        activityAudit.record(
+                candidate.tenantId(),
+                candidate.connectionId(),
+                activityContext,
+                ActivityAction.CREDENTIAL_KEY_REWRAPPED,
+                ActivityResourceType.CREDENTIAL,
+                candidate.connectionId().value().toString(),
+                "PREVIOUS_KEY",
+                "ACTIVE_KEY");
+        return true;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public long countByKeyId(TenantId tenantId, String keyId) {
+        Long count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM connection_credential c
+                JOIN platform_connection p ON p.id = c.connection_id
+                WHERE p.tenant_id = ? AND c.key_id = ?
+                  AND c.credential_generation = p.credential_generation
+                """, Long.class, tenantId.value(), keyId);
+        return count == null ? 0 : count;
     }
 
     private boolean destructiveTransition(

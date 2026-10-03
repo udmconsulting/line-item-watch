@@ -29,9 +29,12 @@ final class HubSpotWebhookController {
     private static final Logger LOGGER = LoggerFactory.getLogger(HubSpotWebhookController.class);
 
     private final HubSpotWebhookIngressService ingressService;
+    private final HubSpotWebhookMetrics metrics;
 
-    HubSpotWebhookController(HubSpotWebhookIngressService ingressService) {
+    HubSpotWebhookController(
+            HubSpotWebhookIngressService ingressService, HubSpotWebhookMetrics metrics) {
         this.ingressService = ingressService;
+        this.metrics = metrics;
     }
 
     @RequestMapping(HubSpotWebhookProperties.ENDPOINT_PATH)
@@ -59,6 +62,7 @@ final class HubSpotWebhookController {
             rawBody = request.getInputStream()
                     .readNBytes(HubSpotWebhookProperties.MAX_BODY_BYTES + 1);
         } catch (IOException exception) {
+            metrics.failed(HubSpotWebhookMetrics.Failure.BODY_READ);
             RequestSupportability.error(request, OperationalErrorCode.REQUEST_BODY_READ_FAILED);
             logKnown("FAILED", OperationalErrorCode.REQUEST_BODY_READ_FAILED);
             return empty(HttpStatus.SERVICE_UNAVAILABLE);
@@ -84,10 +88,12 @@ final class HubSpotWebhookController {
             logKnown("REJECTED", OperationalErrorCode.WEBHOOK_PAYLOAD_INVALID);
             return empty(HttpStatus.BAD_REQUEST);
         } catch (DataAccessException exception) {
+            metrics.failed(HubSpotWebhookMetrics.Failure.DATABASE);
             RequestSupportability.error(request, OperationalErrorCode.DATABASE_UNAVAILABLE);
             logKnown("FAILED", OperationalErrorCode.DATABASE_UNAVAILABLE);
             return empty(HttpStatus.SERVICE_UNAVAILABLE);
         } catch (RuntimeException exception) {
+            metrics.failed(HubSpotWebhookMetrics.Failure.INTERNAL);
             RequestSupportability.error(request, OperationalErrorCode.INTERNAL_ERROR);
             LOGGER.atError()
                     .addKeyValue("component", "hubspot_webhook")

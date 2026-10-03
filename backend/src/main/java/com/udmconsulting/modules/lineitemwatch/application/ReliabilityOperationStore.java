@@ -98,6 +98,11 @@ public interface ReliabilityOperationStore {
     record ReplayResult(int rebuilt, int semanticEvents) {
     }
 
-    record MetricSnapshot(long suspectedGaps, long exhaustedSignals, Instant oldestReconciledAt) {
+    record MetricSnapshot(
+            long suspectedGaps,
+            long exhaustedSignals,
+            long neverReconciledActiveConnections,
+            Instant oldestReconciledAt,
+            Instant latestReconciledAt) {
     }
 }

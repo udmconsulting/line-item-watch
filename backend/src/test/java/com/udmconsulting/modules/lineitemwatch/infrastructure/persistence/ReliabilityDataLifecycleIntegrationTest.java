@@ -184,7 +184,7 @@ class ReliabilityDataLifecycleIntegrationTest {
     @Test
     void terminalSignalRequeueIsCompareAndSetIdempotentAndPreservesOrdering() {
         Fixture fixture = fixture("terminal-requeue");
-        Instant occurredAt = Instant.parse("2026-10-02T10:00:00Z");
+        Instant occurredAt = Instant.now().minusSeconds(2);
         LineItemChangeSignal failed = signal(fixture, "failed", occurredAt, "broken");
         LineItemChangeSignal later = signal(
                 fixture, "later", occurredAt.plusSeconds(1), "later");
@@ -207,7 +207,7 @@ class ReliabilityDataLifecycleIntegrationTest {
                 SELECT COUNT(*) FROM application_activity_audit
                 WHERE action = 'LINE_ITEM_SIGNAL_REQUEUED'
                 """, Long.class)).isEqualTo(1L);
-        assertThat(processing.claimNext(occurredAt.plusSeconds(20),
+        assertThat(processing.claimNext(Instant.now().plusSeconds(20),
                 Duration.ofMinutes(2), 8).orElseThrow().signalId()).isEqualTo(failed.id());
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM line_item_watch_change_signal WHERE id IN (?, ?)
@@ -311,7 +311,7 @@ class ReliabilityDataLifecycleIntegrationTest {
     @Test
     void webhookProcessedAfterProviderReadWinsReconciliationCommitFence() {
         Fixture fixture = trackedFixture("reconciliation-webhook-race");
-        Instant providerReadAt = Instant.parse("2026-10-02T13:30:00Z");
+        Instant providerReadAt = Instant.now();
         var claimed = claimReconciliation(fixture, providerReadAt);
         ReconciliationObservation staleProviderRead = providerRead(
                 "Provider value", providerReadAt.minusSeconds(1),
@@ -413,7 +413,7 @@ class ReliabilityDataLifecycleIntegrationTest {
     @Test
     void replayAnchorRestoresProjectionAndRetentionDeletesOnlyAnchoredProcessedEvidence() {
         Fixture fixture = trackedFixture("anchor-retention");
-        Instant signalAt = Instant.parse("2026-10-02T15:00:00Z");
+        Instant signalAt = Instant.now();
         LineItemChangeSignal change = signal(fixture, "anchor-change", signalAt, "Anchored");
         signals.capture(fixture.tenant().id(), fixture.connection().id(), List.of(change));
         var processingClaim = processing.claimNext(

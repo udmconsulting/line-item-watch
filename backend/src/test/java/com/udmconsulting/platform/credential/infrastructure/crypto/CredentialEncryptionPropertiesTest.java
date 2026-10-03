@@ -9,10 +9,14 @@ class CredentialEncryptionPropertiesTest {
     @Test
     void renderingRedactsEncryptionKey() {
         CredentialEncryptionProperties properties =
-                new CredentialEncryptionProperties("key-1", "do-not-render-encryption-key");
+                new CredentialEncryptionProperties(
+                        "key-1", "do-not-render-encryption-key",
+                        "key-0", "do-not-render-previous-key");
 
         assertThat(properties.toString())
                 .contains("encryptionKey=<redacted>")
-                .doesNotContain("do-not-render-encryption-key");
+                .contains("previousEncryptionKey=<redacted>")
+                .doesNotContain("do-not-render-encryption-key")
+                .doesNotContain("do-not-render-previous-key");
     }
 }

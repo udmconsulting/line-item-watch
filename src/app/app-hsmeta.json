@@ -8,7 +8,7 @@
     "auth": {
       "type": "oauth",
       "redirectUrls": [
-        "http://localhost:8080/integrations/hubspot/oauth/callback"
+        "${LINE_ITEM_WATCH_OAUTH_REDIRECT_URI}"
       ],
       "requiredScopes": [
         "crm.objects.deals.read",

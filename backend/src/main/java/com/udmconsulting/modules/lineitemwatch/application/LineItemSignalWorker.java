@@ -6,6 +6,9 @@ import com.udmconsulting.platform.supportability.DiagnosticContext;
 import com.udmconsulting.platform.supportability.OperationOutcome;
 import com.udmconsulting.platform.supportability.OperationalErrorCode;
 import com.udmconsulting.platform.supportability.SafeDiagnosticException;
+import com.udmconsulting.platform.runtime.ConditionalOnRuntimeRole;
+import com.udmconsulting.platform.runtime.RuntimeRole;
+import com.udmconsulting.platform.runtime.WorkerShutdownSignal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
@@ -23,6 +26,7 @@ import org.springframework.stereotype.Service;
         prefix = "line-item-watch.processing",
         name = "enabled",
         havingValue = "true")
+@ConditionalOnRuntimeRole({RuntimeRole.LOCAL, RuntimeRole.SERVICE})
 public final class LineItemSignalWorker {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LineItemSignalWorker.class);
@@ -31,6 +35,7 @@ public final class LineItemSignalWorker {
     private final LineItemProcessingProperties properties;
     private final LineItemProcessingMetrics metrics;
     private final ApplicationOperationMetrics operationMetrics;
+    private final WorkerShutdownSignal shutdownSignal;
     private final Clock clock;
 
     public LineItemSignalWorker(
@@ -38,17 +43,25 @@ public final class LineItemSignalWorker {
             LineItemProcessingProperties properties,
             LineItemProcessingMetrics metrics,
             ApplicationOperationMetrics operationMetrics,
+            WorkerShutdownSignal shutdownSignal,
             Clock clock) {
         this.store = Objects.requireNonNull(store);
         this.properties = Objects.requireNonNull(properties);
         this.metrics = Objects.requireNonNull(metrics);
         this.operationMetrics = Objects.requireNonNull(operationMetrics);
+        this.shutdownSignal = Objects.requireNonNull(shutdownSignal);
         this.clock = Objects.requireNonNull(clock);
     }
 
     @Scheduled(fixedDelayString = "${line-item-watch.processing.poll-delay:1s}")
     public void poll() {
+        if (!shutdownSignal.acceptingClaims()) {
+            return;
+        }
         for (int processed = 0; processed < properties.maxPerPoll(); processed++) {
+            if (!shutdownSignal.acceptingClaims()) {
+                break;
+            }
             Instant now = clock.instant();
             var claim = store.claimNext(now, properties.leaseDuration(), properties.maxAttempts());
             if (claim.isEmpty()) {

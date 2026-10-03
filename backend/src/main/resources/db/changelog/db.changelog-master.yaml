@@ -17,3 +17,5 @@ databaseChangeLog:
       file: db/changelog/changes/008-line-item-watch-audit-usability.sql
   - include:
       file: db/changelog/changes/009-line-item-watch-reliability-data-lifecycle.sql
+  - include:
+      file: db/changelog/changes/010-production-foundation.sql

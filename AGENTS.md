@@ -7,7 +7,7 @@ This is the canonical execution contract for coding agents in this repository. F
 - `LINE_ITEM_WATCH` is the only defined Product Module.
 - HubSpot is the first external provider; it is not the business domain.
 - The accepted feasibility spike is under `spike/`; do not repeat destructive/live tests without explicit authorization.
-- The backend under `backend/` implements Tenant and Platform Connection identity/lifecycle, Product Module entitlements, PostgreSQL persistence, HubSpot OAuth install/callback, encrypted refresh credentials, on-demand refresh, internal uninstall, explicit one-Deal `LINE_ITEM_WATCH` baseline synchronization, authenticated/deduplicated durable HubSpot Line Item change-signal capture, provider-free asynchronous signal reconstruction into semantic audit history and derived latest state, tracked-scope reconciliation, provider-free replay/recovery, verified replay anchors, policy-gated retention mechanics, a signed Deal audit read API, shared supportability, and atomic connection/entitlement/operator activity auditing. The Deal App Card and English/Hungarian translations are implemented. Customer administration/disconnect APIs and production infrastructure/operations remain unimplemented.
+- The backend under `backend/` implements Tenant and Platform Connection identity/lifecycle, Product Module entitlements, PostgreSQL persistence, HubSpot OAuth install/callback, encrypted refresh credentials, on-demand refresh, internal uninstall, explicit one-Deal `LINE_ITEM_WATCH` baseline synchronization, authenticated/deduplicated durable HubSpot Line Item change-signal capture, provider-free asynchronous signal reconstruction into semantic audit history and derived latest state, tracked-scope reconciliation, provider-free replay/recovery, verified replay anchors, policy-gated retention mechanics, a signed Deal audit read API, shared supportability, and atomic connection/entitlement/operator activity auditing. The Deal App Card and English/Hungarian translations are implemented. The P.9 GCP/operations and UI-assurance repository foundation exists; staging S1 is complete and parked with runtime not deployed, while production is not provisioned. Customer administration/disconnect APIs remain unimplemented.
 - Read [product overview](docs/business/product-overview.md), [Beta scope](docs/business/beta-v1.md), [architecture overview](docs/architecture/system-overview.md), and the relevant development/trust documents before implementation.
 
 ## Before implementation
@@ -61,7 +61,7 @@ Every task must:
 
 - Durable local-development secrets belong only in the Git-ignored `backend/config/application-local.yaml`; tracked configuration and its example file contain placeholders or environment references only.
 - Do not rely on ephemeral shell-only encryption keys for credentials persisted in the local database. The configured encryption key must remain available for as long as ciphertext created under its key ID exists. Key loss or change requires controlled credential re-establishment; never generate different key material under an existing key ID.
-- Never commit a local secret file. Production secrets remain external runtime configuration and must use a managed mechanism such as Vault, Azure Key Vault, Kubernetes Secrets, or an equivalent selected for the production platform.
+- Never commit a local secret file. Production secrets remain external runtime configuration; the selected GCP deployment uses Secret Manager containers with explicit numeric versions and out-of-band payload injection.
 
 ## Security and privacy review
 
@@ -82,6 +82,8 @@ Never claim without explicit evidence: GDPR compliant, SOC 2 compliant, ISO 2700
 ## Documentation Definition of Done
 
 Update documentation in the same task when changing business/module behavior, architecture, provider integration, boundaries, API, data model, configuration, deployment, operations, security/privacy, onboarding, retention, subprocessors, or extension mechanisms. Add an ADR for material architecture decisions. Document current behavior accurately and use `TBD` rather than inventing decisions.
+
+When a project-wide required tool or version changes, update the canonical `docs/development/tooling.md` in the same change; do not duplicate the full prerequisite inventory elsewhere.
 
 ## HubSpot project constraints
 

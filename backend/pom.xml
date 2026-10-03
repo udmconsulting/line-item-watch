@@ -20,6 +20,9 @@
     <properties>
         <java.version>25</java.version>
         <archunit.version>1.5.0</archunit.version>
+        <cloud-sql-connector.version>1.30.0</cloud-sql-connector.version>
+        <dependency-check.version>13.0.0</dependency-check.version>
+        <tomcat.version>11.0.26</tomcat.version>
     </properties>
 
     <dependencies>
@@ -46,6 +49,17 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.google.cloud.sql</groupId>
+            <artifactId>postgres-socket-factory</artifactId>
+            <version>${cloud-sql-connector.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-stackdriver</artifactId>
             <scope>runtime</scope>
         </dependency>
 
@@ -92,4 +106,27 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>dependency-audit</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.owasp</groupId>
+                        <artifactId>dependency-check-maven</artifactId>
+                        <version>${dependency-check.version}</version>
+                        <configuration>
+                            <assemblyAnalyzerEnabled>false</assemblyAnalyzerEnabled>
+                            <failBuildOnCVSS>7</failBuildOnCVSS>
+                            <failBuildOnUnusedSuppressionRule>true</failBuildOnUnusedSuppressionRule>
+                            <suppressionFiles>
+                                <suppressionFile>${project.basedir}/config/dependency-check-suppressions.xml</suppressionFile>
+                            </suppressionFiles>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

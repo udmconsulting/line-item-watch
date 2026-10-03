@@ -19,6 +19,9 @@ public final class ReliabilityMetrics {
     private final AtomicLong reconciliationAgeSeconds = new AtomicLong();
     private final AtomicLong suspectedGapCount = new AtomicLong();
     private final AtomicLong exhaustedSignalCount = new AtomicLong();
+    private final AtomicLong neverReconciledActiveConnectionCount = new AtomicLong();
+    private final AtomicLong lastSuccessAgeSeconds = new AtomicLong();
+    private final AtomicLong lastSuccessEpochSeconds = new AtomicLong();
 
     public ReliabilityMetrics(MeterRegistry registry) {
         Objects.requireNonNull(registry);
@@ -39,11 +42,22 @@ public final class ReliabilityMetrics {
                 suspectedGapCount, AtomicLong::get).register(registry);
         Gauge.builder("line_item_watch.processing.exhausted_signals",
                 exhaustedSignalCount, AtomicLong::get).register(registry);
+        Gauge.builder("line_item_watch.reconciliation.never_reconciled_active_connections",
+                neverReconciledActiveConnectionCount, AtomicLong::get).register(registry);
+        Gauge.builder("line_item_watch.reconciliation.last_success_age_seconds",
+                lastSuccessAgeSeconds, AtomicLong::get).register(registry);
+        Gauge.builder("line_item_watch.reconciliation.last_success_epoch_seconds",
+                lastSuccessEpochSeconds, AtomicLong::get).register(registry);
     }
 
     public void reconciled(LineItemReliability.ReconciliationOutcome outcome, Instant at) {
         reconciliation.get(outcome).increment();
-        reconciliationAgeSeconds.set(0);
+        if (outcome != LineItemReliability.ReconciliationOutcome.UNAVAILABLE
+                && outcome != LineItemReliability.ReconciliationOutcome.NOT_RUN) {
+            reconciliationAgeSeconds.set(0);
+            lastSuccessAgeSeconds.set(0);
+            lastSuccessEpochSeconds.set(at.getEpochSecond());
+        }
     }
 
     public void replayed(ReplayOutcome outcome) {
@@ -58,6 +72,15 @@ public final class ReliabilityMetrics {
     public void updateCounts(long gaps, long exhausted) {
         suspectedGapCount.set(Math.max(0, gaps));
         exhaustedSignalCount.set(Math.max(0, exhausted));
+    }
+
+    public void updateReconciliationState(
+            long neverReconciled, Instant latestSuccess, Instant now) {
+        neverReconciledActiveConnectionCount.set(Math.max(0, neverReconciled));
+        lastSuccessEpochSeconds.set(latestSuccess == null ? 0 : latestSuccess.getEpochSecond());
+        lastSuccessAgeSeconds.set(latestSuccess == null
+                ? 0
+                : Math.max(0, Duration.between(latestSuccess, now).toSeconds()));
     }
 
     public enum ReplayOutcome { SUCCEEDED, FAILED, INSUFFICIENT_EVIDENCE }

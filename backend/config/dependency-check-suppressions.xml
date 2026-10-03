@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.4.xsd"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xsi:schemaLocation="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.4.xsd
+                                  https://dependency-check.github.io/DependencyCheck/dependency-suppression.1.4.xsd">
+    <suppress>
+        <notes><![CDATA[
+        The Google Cloud SQL Admin Java client is not the unrelated WWW-SQL CGI product
+        affected by CVE-2004-0455. The package URL keeps this suppression artifact-specific.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/com\.google\.cloud/google-cloud-sql@.*$</packageUrl>
+        <cve>CVE-2004-0455</cve>
+    </suppress>
+    <suppress>
+        <notes><![CDATA[
+        The generated Google Cloud SQL v1 Java proto is not the unrelated WWW-SQL CGI
+        product affected by CVE-2004-0455.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/com\.google\.api\.grpc/proto-google-cloud-sql-v1@.*$</packageUrl>
+        <cve>CVE-2004-0455</cve>
+    </suppress>
+    <suppress>
+        <notes><![CDATA[
+        The generated Google Cloud SQL v1beta4 Java proto is not the unrelated WWW-SQL
+        CGI product affected by CVE-2004-0455.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/com\.google\.api\.grpc/proto-google-cloud-sql-v1beta4@.*$</packageUrl>
+        <cve>CVE-2004-0455</cve>
+    </suppress>
+    <suppress>
+        <notes><![CDATA[
+        dev.cel:protobuf is the CEL Java adapter, not the com.google.protobuf Java
+        runtime. The actual protobuf-java dependency remains independently scanned.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/dev\.cel/protobuf@.*$</packageUrl>
+        <cve>CVE-2021-22569</cve>
+        <cve>CVE-2022-3171</cve>
+        <cve>CVE-2024-7254</cve>
+    </suppress>
+</suppressions>

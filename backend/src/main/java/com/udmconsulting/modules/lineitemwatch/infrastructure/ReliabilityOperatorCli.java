@@ -10,6 +10,9 @@ import com.udmconsulting.platform.activity.domain.ActivityActor;
 import com.udmconsulting.platform.activity.domain.ActivityActorSource;
 import com.udmconsulting.platform.activity.domain.ActivityActorType;
 import com.udmconsulting.platform.connection.domain.PlatformConnectionId;
+import com.udmconsulting.platform.credential.application.CredentialKeyRotation;
+import com.udmconsulting.platform.runtime.ConditionalOnRuntimeRole;
+import com.udmconsulting.platform.runtime.RuntimeRole;
 import com.udmconsulting.platform.tenant.domain.TenantId;
 import java.time.Instant;
 import java.util.List;
@@ -23,15 +26,20 @@ import org.springframework.stereotype.Component;
 @Component
 @ConditionalOnProperty(
         prefix = "line-item-watch.operator", name = "enabled", havingValue = "true")
+@ConditionalOnRuntimeRole(RuntimeRole.OPERATOR)
 final class ReliabilityOperatorCli implements ApplicationRunner {
 
     private final ReliabilityOperations operations;
     private final ReliabilityMaintenance maintenance;
+    private final CredentialKeyRotation keyRotation;
 
     ReliabilityOperatorCli(
-            ReliabilityOperations operations, ReliabilityMaintenance maintenance) {
+            ReliabilityOperations operations,
+            ReliabilityMaintenance maintenance,
+            CredentialKeyRotation keyRotation) {
         this.operations = operations;
         this.maintenance = maintenance;
+        this.keyRotation = keyRotation;
     }
 
     @Override
@@ -40,43 +48,50 @@ final class ReliabilityOperatorCli implements ApplicationRunner {
             execute(arguments);
         } catch (ReliabilityOperationException exception) {
             System.out.println("status=FAILED error_code=" + exception.errorCode().name());
+            throw new OperatorCommandException();
         } catch (IllegalArgumentException exception) {
             System.out.println("status=FAILED error_code=INVALID_RECOVERY_OPERATION");
+            throw new OperatorCommandException();
+        } catch (IllegalStateException exception) {
+            System.out.println("status=FAILED error_code=OPERATOR_CONFIGURATION_INVALID");
+            throw new OperatorCommandException();
         }
     }
 
     private void execute(ApplicationArguments args) {
         String command = required(args, "command");
         TenantId tenant = new TenantId(UUID.fromString(required(args, "tenant")));
-        PlatformConnectionId connection = new PlatformConnectionId(
-                UUID.fromString(required(args, "connection")));
         ActivityContext actor = new ActivityContext(
                 new ActivityActor(ActivityActorType.OPERATOR, ActivityActorSource.APPLICATION,
                         required(args, "operator-ref")), UUID.randomUUID());
         switch (command) {
-            case "reconcile-tenant" -> queued(operations.reconcileTenant(tenant, connection, actor));
+            case "reconcile-tenant" -> queued(operations.reconcileTenant(
+                    tenant, connection(args), actor));
             case "reconcile-deal" -> queued(operations.reconcileDeal(
-                    tenant, connection, new ProviderObjectId(required(args, "deal")), actor));
+                    tenant, connection(args), new ProviderObjectId(required(args, "deal")), actor));
             case "reconcile-line-item" -> queued(operations.reconcileLineItem(
-                    tenant, connection, uuid(args, "line-item"), actor));
+                    tenant, connection(args), uuid(args, "line-item"), actor));
             case "replay-line-item" -> queued(operations.replayLineItem(
-                    tenant, connection, uuid(args, "line-item"), actor));
-            case "rebuild-tenant" -> queued(operations.rebuildTenant(tenant, connection, actor));
+                    tenant, connection(args), uuid(args, "line-item"), actor));
+            case "rebuild-tenant" -> queued(operations.rebuildTenant(
+                    tenant, connection(args), actor));
             case "list-exhausted" -> {
-                List<?> rows = maintenance.listExhausted(tenant, connection, null, 1_000);
+                List<?> rows = maintenance.listExhausted(
+                        tenant, connection(args), null, 1_000);
                 System.out.println("status=SUCCEEDED count=" + rows.size());
             }
             case "requeue-signal" -> {
-                maintenance.requeue(tenant, connection, uuid(args, "signal"), actor);
+                maintenance.requeue(
+                        tenant, connection(args), uuid(args, "signal"), actor);
                 System.out.println("status=SUCCEEDED count=1");
             }
             case "create-anchor" -> {
                 var result = maintenance.anchor(
-                        tenant, connection, uuid(args, "line-item"));
+                        tenant, connection(args), uuid(args, "line-item"));
                 System.out.println("status=SUCCEEDED count=1 ref=" + result.anchorId());
             }
             case "inspect" -> {
-                var result = maintenance.inspect(tenant, connection);
+                var result = maintenance.inspect(tenant, connection(args));
                 System.out.println("status=SUCCEEDED pending=" + result.pendingOperations()
                         + " active=" + result.activeOperations()
                         + " failed=" + result.failedOperations()
@@ -85,7 +100,7 @@ final class ReliabilityOperatorCli implements ApplicationRunner {
                         + " exhausted=" + result.exhaustedSignals());
             }
             case "retention-preview" -> {
-                var result = maintenance.preview(tenant, connection, cutoffs(args));
+                var result = maintenance.preview(tenant, connection(args), cutoffs(args));
                 System.out.println("status=SUCCEEDED processed_signals="
                         + result.processedSignals() + " semantic_events="
                         + result.semanticEvents() + " activity=" + result.activityRecords()
@@ -95,20 +110,30 @@ final class ReliabilityOperatorCli implements ApplicationRunner {
                 boolean confirmed = "EXECUTE".equals(required(args, "confirm"));
                 int batch = Integer.parseInt(required(args, "batch-size"));
                 var result = maintenance.retain(
-                        tenant, connection, cutoffs(args), confirmed, batch, actor);
+                        tenant, connection(args), cutoffs(args), confirmed, batch, actor);
                 System.out.println("status=SUCCEEDED processed_signals="
                         + result.processedSignals() + " semantic_events="
                         + result.semanticEvents() + " activity=" + result.activityRecords()
                         + " operations=" + result.terminalOperations());
             }
             case "acknowledge-finding" -> {
-                maintenance.acknowledge(tenant, connection, uuid(args, "finding"), actor);
+                maintenance.acknowledge(
+                        tenant, connection(args), uuid(args, "finding"), actor);
                 System.out.println("status=SUCCEEDED count=1");
             }
             case "acknowledge-gap" -> {
-                maintenance.acknowledgeGap(tenant, connection, actor);
+                maintenance.acknowledgeGap(tenant, connection(args), actor);
                 System.out.println("status=SUCCEEDED count=1");
             }
+            case "credential-key-rewrap" -> {
+                int batch = Integer.parseInt(required(args, "batch-size"));
+                var result = keyRotation.rewrap(tenant, batch, actor);
+                System.out.println("status=SUCCEEDED rewrapped=" + result.rewrapped()
+                        + " concurrent_changes=" + result.concurrentChanges()
+                        + " remaining=" + result.remaining());
+            }
+            case "credential-key-verify" -> System.out.println(
+                    "status=SUCCEEDED remaining=" + keyRotation.remaining(tenant));
             default -> throw new IllegalArgumentException("unsupported command");
         }
     }
@@ -130,6 +155,10 @@ final class ReliabilityOperatorCli implements ApplicationRunner {
         return UUID.fromString(required(args, name));
     }
 
+    private static PlatformConnectionId connection(ApplicationArguments args) {
+        return new PlatformConnectionId(UUID.fromString(required(args, "connection")));
+    }
+
     private static String required(ApplicationArguments args, String name) {
         List<String> values = args.getOptionValues(name);
         if (values == null || values.size() != 1 || values.getFirst().isBlank()) {
@@ -140,5 +169,12 @@ final class ReliabilityOperatorCli implements ApplicationRunner {
 
     private static void queued(UUID operationId) {
         System.out.println("status=PENDING count=1 ref=" + operationId);
+    }
+
+    private static final class OperatorCommandException extends RuntimeException {
+
+        private OperatorCommandException() {
+            super("Operator command failed");
+        }
     }
 }

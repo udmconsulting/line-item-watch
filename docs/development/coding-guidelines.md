@@ -59,6 +59,8 @@ Domain and application types must not carry JPA annotations. JPA entities, Sprin
 
 Update the relevant documentation in the same task whenever behavior, architecture, boundaries, providers, API, data model, configuration, operations, security/privacy, deployment, onboarding, retention, subprocessors, or extension mechanisms change. Add an ADR for a material architecture decision. Describe current reality and mark unresolved decisions `TBD`.
 
+When a tool or runtime version changes, update its canonical machine-readable source and [developer tooling](tooling.md) in the same task. CI should consume the canonical source where the action supports it rather than duplicating a version literal.
+
 ## Out-of-scope discoveries and the product roadmap
 
 When implementation or review reveals a valuable product, UX, operational, or technical idea outside the current approved scope:

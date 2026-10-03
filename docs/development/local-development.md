@@ -7,9 +7,11 @@ The repository contains HubSpot app project metadata, read-only feasibility prob
 ## Prerequisites
 
 - JDK 25
+- Node.js 20.17.0 for the frontend and assurance packages
 - Docker with Docker Compose
 
 Maven 3.9.16 is supplied by `backend/mvnw`; a separately installed Maven is not required.
+The canonical required/recommended tool list, version sources, authentication distinctions, and new-machine checklist are in [developer tooling](tooling.md).
 
 ## Backend database and application
 
@@ -46,7 +48,7 @@ The local credential-encryption key must survive for as long as any local databa
 
 Begin installation at `http://localhost:8080/integrations/hubspot/oauth/install`. The HubSpot app configuration must contain the matching callback URL. `HUBSPOT_API_BASE_URL` and `HUBSPOT_AUTHORIZATION_BASE_URL` are optional test overrides; HTTPS is mandatory except for explicit localhost/loopback development endpoints. `HUBSPOT_CONNECT_TIMEOUT` and `HUBSPOT_READ_TIMEOUT` optionally override the bounded `5s` and `20s` defaults. Without the local profile, database variables are also mandatory. Never commit, print, or add local secrets to shell startup files.
 
-Production secrets must remain external runtime configuration. Select a managed mechanism such as Vault, Azure Key Vault, Kubernetes Secrets, or an equivalent appropriate to the eventual hosting platform; the production choice remains TBD and production secret values must never be stored in repository configuration.
+Production secrets remain external runtime configuration. GCP Secret Manager is the selected deployment adapter; Terraform creates containers/IAM only and Cloud Run references explicit numeric versions. Secret payloads must never enter Terraform state or repository configuration. Local development continues to use the ignored, permission-restricted configuration file.
 
 ### Webhook receiver configuration
 
@@ -212,4 +214,4 @@ The HubSpot app component is configured under `src/app`. HubSpot project validat
 - [Security overview](../trust/security-overview.md)
 - repository root [`AGENTS.md`](../../AGENTS.md)
 
-Production deployment and operations commands remain TBD.
+Production deployment and operations are documented in [deployment](deployment.md) and the [production runbooks](../operations/production-runbooks.md). They remain templates until separately authorized infrastructure exists.

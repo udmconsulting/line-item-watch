@@ -1,0 +1,7 @@
+{
+  "accountId": 0,
+  "variables": {
+    "LINE_ITEM_WATCH_API_ORIGIN": "https://liw-staging-service-PROJECT_NUMBER.europe-west1.run.app",
+    "LINE_ITEM_WATCH_OAUTH_REDIRECT_URI": "https://liw-staging-service-PROJECT_NUMBER.europe-west1.run.app/integrations/hubspot/oauth/callback"
+  }
+}

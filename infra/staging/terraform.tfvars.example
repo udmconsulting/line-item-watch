@@ -1,0 +1,26 @@
+organization_id = "656511895628"
+project_id       = "udm-liw-staging-unique-suffix"
+project_name     = "UDM LIW Staging"
+environment      = "staging"
+region           = "europe-west1"
+github_repository = "owner/repository"
+
+# Supply account-specific billing metadata locally, never in this file:
+# set TF_VAR_billing_account_id in the invoking shell or protected runner.
+
+provision_runtime = false
+deploy_service    = false
+staging_parked    = true
+
+# First Cloud SQL create/recovery only: temporarily set true while the rest of
+# staging remains parked, then return to false in the separately reviewed park.
+database_bootstrap_active = false
+
+notification_channel_ids        = []
+create_environment_budget       = false
+monthly_budget_amount           = 25
+artifact_registry_reader_members = []
+
+# Runtime phase only: supply image_digest, HubSpot IDs, active key IDs, and the
+# exact secret_versions consumed by the enabled jobs/service. Foundation plans
+# deliberately omit them.

@@ -1,0 +1,7 @@
+{
+  "accountId": 0,
+  "variables": {
+    "LINE_ITEM_WATCH_API_ORIGIN": "https://api.lineitemwatch.com",
+    "LINE_ITEM_WATCH_OAUTH_REDIRECT_URI": "https://api.lineitemwatch.com/integrations/hubspot/oauth/callback"
+  }
+}

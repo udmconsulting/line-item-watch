@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.udmconsulting.integrations.hubspot.config.HubSpotWebhookProperties;
 import com.udmconsulting.platform.supportability.CorrelationFilter;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -36,7 +37,8 @@ class HubSpotWebhookControllerTest {
     @BeforeEach
     void setUp() {
         service = mock(HubSpotWebhookIngressService.class);
-        controller = new HubSpotWebhookController(service);
+        controller = new HubSpotWebhookController(
+                service, new HubSpotWebhookMetrics(new SimpleMeterRegistry()));
         mvc = MockMvcBuilders.standaloneSetup(controller)
                 .addFilters(new CorrelationFilter())
                 .build();

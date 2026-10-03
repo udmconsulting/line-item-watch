@@ -251,6 +251,25 @@ class HubSpotAccessTokenProviderTest {
                 ActivityContext activityContext) {
             return false;
         }
+
+        @Override
+        public java.util.List<CredentialRewrapCandidate> findForRewrap(
+                TenantId tenantId, String sourceKeyId, int limit) {
+            return java.util.List.of();
+        }
+
+        @Override
+        public boolean rewrapIfUnchanged(
+                CredentialRewrapCandidate candidate,
+                EncryptedSecret replacement,
+                ActivityContext activityContext) {
+            return false;
+        }
+
+        @Override
+        public long countByKeyId(TenantId tenantId, String keyId) {
+            return 0;
+        }
     }
 
     private static final class StubGateway implements HubSpotOAuthGateway {

@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "skipLibCheck": true,
+    "types": ["node", "@playwright/test", "react"],
+    "baseUrl": ".",
+    "paths": {
+      "@hubspot/ui-extensions": ["../src/app/cards/node_modules/@hubspot/ui-extensions/dist/index.d.ts"],
+      "@hubspot/ui-extensions/*": ["../src/app/cards/node_modules/@hubspot/ui-extensions/dist/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", "**/*.mjs"]
+}
