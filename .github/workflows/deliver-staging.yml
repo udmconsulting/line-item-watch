@@ -1,19 +1,27 @@
 name: Deliver staging
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
+      revision:
+        description: Full 40-character Git SHA selected from main
+        required: true
+        type: string
       artifact_only:
-        description: Build and push the initial immutable image without requiring Cloud Run resources
-        required: false
+        description: Publish immutable artifacts without touching the provisioned runtime
+        required: true
         default: false
         type: boolean
-
-concurrency:
-  group: staging-delivery
-  cancel-in-progress: false
+      run_migrations:
+        description: Run the migration job before a full staging deployment
+        required: true
+        default: true
+        type: boolean
+      verify:
+        description: Require readiness and the protected real HubSpot journey
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -21,126 +29,9 @@ permissions:
 
 jobs:
   deliver:
-    runs-on: ubuntu-latest
-    environment: staging
-    steps:
-      - uses: actions/checkout@v7
-      - id: auth
-        uses: google-github-actions/auth@v3
-        with:
-          project_id: ${{ vars.GCP_STAGING_PROJECT_ID }}
-          workload_identity_provider: ${{ vars.GCP_STAGING_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_STAGING_DEPLOYER_SERVICE_ACCOUNT }}
-      - uses: google-github-actions/setup-gcloud@v3
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-          cache-dependency-path: assurance/package-lock.json
-      - name: Require staging project and repository configuration
-        env:
-          PROJECT_ID: ${{ vars.GCP_STAGING_PROJECT_ID }}
-          REPOSITORY: ${{ vars.GCP_STAGING_ARTIFACT_REPOSITORY }}
-        run: |
-          test -n "$PROJECT_ID"
-          test -n "$REPOSITORY"
-      - name: Require provisioned staging runtime configuration
-        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.artifact_only }}
-        env:
-          PROJECT_ID: ${{ vars.GCP_STAGING_PROJECT_ID }}
-          MIGRATION_JOB: ${{ vars.GCP_STAGING_MIGRATION_JOB }}
-          SERVICE: ${{ vars.GCP_STAGING_SERVICE }}
-          API_ORIGIN: ${{ vars.GCP_STAGING_API_ORIGIN }}
-        run: |
-          test -n "$PROJECT_ID"
-          test -n "$MIGRATION_JOB"
-          test -n "$SERVICE"
-          test -n "$API_ORIGIN"
-      - name: Build and push once
-        id: image
-        env:
-          REPOSITORY: ${{ vars.GCP_STAGING_ARTIFACT_REPOSITORY }}
-        run: |
-          gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
-          tagged_image="${REPOSITORY}/line-item-watch:${GITHUB_SHA}"
-          docker build \
-            --build-arg SOURCE_REVISION="${GITHUB_SHA}" \
-            --build-arg BUILD_TIME=1970-01-01T00:00:00Z \
-            --tag "$tagged_image" .
-          docker push "$tagged_image"
-          digest=$(gcloud artifacts docker images describe "$tagged_image" --format='value(image_summary.digest)')
-          test -n "$digest"
-          synthetic_tagged_image="${REPOSITORY}/line-item-watch-assurance:${GITHUB_SHA}"
-          docker build --file assurance/Dockerfile --tag "$synthetic_tagged_image" .
-          test "$(docker image inspect --format '{{.Config.User}}' "$synthetic_tagged_image")" = pwuser
-          if docker run --rm "$synthetic_tagged_image"; then
-            echo "Synthetic runner unexpectedly accepted missing target configuration" >&2
-            exit 1
-          fi
-          docker push "$synthetic_tagged_image"
-          synthetic_digest=$(gcloud artifacts docker images describe "$synthetic_tagged_image" --format='value(image_summary.digest)')
-          test -n "$synthetic_digest"
-          {
-            echo "digest=$digest"
-            echo "image=${REPOSITORY}/line-item-watch@${digest}"
-            echo "synthetic_digest=$synthetic_digest"
-            echo "synthetic_image=${REPOSITORY}/line-item-watch-assurance@${synthetic_digest}"
-          } >> "$GITHUB_OUTPUT"
-      - name: Run migration job with immutable image
-        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.artifact_only }}
-        env:
-          PROJECT_ID: ${{ vars.GCP_STAGING_PROJECT_ID }}
-          MIGRATION_JOB: ${{ vars.GCP_STAGING_MIGRATION_JOB }}
-          IMAGE: ${{ steps.image.outputs.image }}
-        run: |
-          gcloud run jobs update "$MIGRATION_JOB" --project "$PROJECT_ID" --region europe-west1 --image "$IMAGE" --quiet
-          gcloud run jobs execute "$MIGRATION_JOB" --project "$PROJECT_ID" --region europe-west1 --wait --quiet
-      - name: Deploy staging and smoke readiness
-        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.artifact_only }}
-        env:
-          PROJECT_ID: ${{ vars.GCP_STAGING_PROJECT_ID }}
-          SERVICE: ${{ vars.GCP_STAGING_SERVICE }}
-          API_ORIGIN: ${{ vars.GCP_STAGING_API_ORIGIN }}
-          IMAGE: ${{ steps.image.outputs.image }}
-        run: |
-          gcloud run services update "$SERVICE" --project "$PROJECT_ID" --region europe-west1 --image "$IMAGE" --quiet
-          for _ in $(seq 1 30); do
-            if curl --fail --silent --show-error "${API_ORIGIN}/actuator/health/readiness" >/dev/null; then
-              exit 0
-            fi
-            sleep 10
-          done
-          exit 1
-      - name: Run real HubSpot staging customer journey
-        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.artifact_only }}
-        env:
-          LIW_ASSURANCE_TARGET: staging
-          LIW_HUBSPOT_RECORD_URL: ${{ secrets.LIW_STAGING_HUBSPOT_RECORD_URL }}
-          LIW_HUBSPOT_STORAGE_STATE_JSON: ${{ secrets.LIW_STAGING_HUBSPOT_STORAGE_STATE_JSON }}
-          LIW_ASSURANCE_FIXTURE_JSON: ${{ vars.LIW_STAGING_ASSURANCE_FIXTURE_JSON }}
-          LIW_RELEASE_DIGEST: ${{ steps.image.outputs.digest }}
-          LIW_API_ORIGIN: ${{ vars.GCP_STAGING_API_ORIGIN }}
-        run: |
-          npm --prefix assurance ci
-          npm --prefix assurance exec -- playwright install --with-deps chromium
-          npm --prefix assurance run test:staging
-      - name: Retain sanitized staging result on failure
-        if: ${{ failure() && (github.event_name != 'workflow_dispatch' || !inputs.artifact_only) }}
-        uses: actions/upload-artifact@v6
-        with:
-          name: staging-ui-assurance-safe-evidence
-          path: assurance/test-results/safe-evidence.json
-          if-no-files-found: ignore
-          retention-days: 7
-      - name: Record image digest
-        run: |
-          {
-            echo "### Staging image digest"
-            echo '${{ steps.image.outputs.image }}'
-            echo 'Assurance image: ${{ steps.image.outputs.synthetic_image }}'
-            if [ '${{ github.event_name }}' = workflow_dispatch ] && [ '${{ inputs.artifact_only }}' = true ]; then
-              echo "Artifact-only bootstrap: not migration-tested or staging-accepted."
-            else
-              echo "Backend readiness and the real HubSpot Playwright journey passed; both immutable digests are staging-accepted."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+    uses: ./.github/workflows/_deliver-staging.yml
+    with:
+      revision: ${{ inputs.revision }}
+      artifact_only: ${{ inputs.artifact_only }}
+      run_migrations: ${{ inputs.run_migrations }}
+      verify: ${{ inputs.verify }}

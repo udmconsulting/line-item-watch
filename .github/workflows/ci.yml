@@ -77,8 +77,14 @@ jobs:
         run: npm --prefix assurance run test:visual
       - name: Verify production synthetic container boundary
         run: |
-          docker build --file assurance/Dockerfile --tag line-item-watch-assurance:ci .
+          docker build \
+            --file assurance/Dockerfile \
+            --build-arg "SOURCE_REVISION=${GITHUB_SHA}" \
+            --build-arg BUILD_TIME=1970-01-01T00:00:00Z \
+            --tag line-item-watch-assurance:ci .
           test "$(docker image inspect --format '{{.Config.User}}' line-item-watch-assurance:ci)" = pwuser
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' line-item-watch-assurance:ci)" = "${GITHUB_SHA}"
+          test "$(docker image inspect --format '{{index .Config.Labels "com.udmconsulting.line-item-watch.image-type"}}' line-item-watch-assurance:ci)" = assurance
           if docker run --rm line-item-watch-assurance:ci; then
             echo "Synthetic runner unexpectedly accepted missing target configuration" >&2
             exit 1
@@ -121,6 +127,8 @@ jobs:
         run: |
           image_user=$(docker image inspect --format '{{.Config.User}}' "line-item-watch:${GITHUB_SHA}")
           test "$image_user" = "10001:10001"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "line-item-watch:${GITHUB_SHA}")" = "${GITHUB_SHA}"
+          test "$(docker image inspect --format '{{index .Config.Labels "com.udmconsulting.line-item-watch.image-type"}}' "line-item-watch:${GITHUB_SHA}")" = application
           docker run --rm --entrypoint java "line-item-watch:${GITHUB_SHA}" -version 2>&1 | grep 'version "25\.'
           docker run --rm --entrypoint sh "line-item-watch:${GITHUB_SHA}" -c '
             test "$(id -u)" = 10001
@@ -210,6 +218,8 @@ jobs:
       - run: terraform fmt -check -recursive infra
       - name: Verify project and lifecycle contracts
         run: bash infra/tests/verify-contracts.sh
+      - name: Verify canonical operations and workflow safety contracts
+        run: bash scripts/tests/automation-contracts.sh
       - name: Test environment module contracts with a mocked provider
         working-directory: infra/modules/environment
         run: terraform init -backend=false && terraform test

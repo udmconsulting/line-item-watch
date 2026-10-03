@@ -42,7 +42,7 @@ Module-owned checkpoint/audit persistence  [implemented]
         v
 Infrastructure adapters
   PostgreSQL (foundation + checkpoints + signals + jobs + audits implemented)
-  Cloud SQL/Cloud Run/Cloud Monitoring adapters and Terraform [staging foundation partial/recovery required; runtime and production not provisioned]
+  Cloud SQL/Cloud Run/Cloud Monitoring adapters and Terraform [staging foundation complete/parked; runtime and production not provisioned]
 ```
 
 The arrows show dependency flow into application-owned contracts and business behavior. Domain/application code must not depend outward on HubSpot clients, webhook DTOs, HTTP, JPA/PostgreSQL implementations, hosting APIs, monitoring vendors, or billing-provider APIs.
@@ -53,7 +53,7 @@ The target is one codebase and a modular monolith with explicit internal ownersh
 
 PostgreSQL 18 is the implemented database, with Liquibase-managed schema, persistence adapters, durable processing queues, and Platform-owned application activity audit. One OCI artifact has explicit local, service, migration, and operator roles. The approved production service combines HTTP and both workers; migration and operator roles are isolated one-shot jobs. Shared supportability supplies server-owned request correlation, worker operation identity, stable error categories, privacy-aware structured logs, safe unexpected-failure diagnostics, and bounded vendor-neutral metrics.
 
-GCP `europe-west1` is the selected deployment foundation: separate Terraform-managed staging/production projects, Cloud Run, Cloud SQL PostgreSQL 18, Secret Manager, Cloud Monitoring, WIF delivery, and a production-only global HTTPS load balancer for `api.lineitemwatch.com`. Staging uses `run.app`. The organization, bootstrap project, billing link/budget alert, and protected GCS state bucket exist; staging S1 is partial with no database/runtime, and production is not provisioned. Production begins zonal and max one, with min zero while install-ready without active customers and min one for active processing; Regional HA, Cloud Armor, and a physical API/worker split require measured need.
+GCP `europe-west1` is the selected deployment foundation: separate Terraform-managed staging/production projects, Cloud Run, Cloud SQL PostgreSQL 18, Secret Manager, Cloud Monitoring, WIF delivery, and a production-only global HTTPS load balancer for `api.lineitemwatch.com`. Staging uses `run.app`. The organization, bootstrap project, billing link/budget alert, and protected GCS state bucket exist; staging S1 is complete and parked with its database stopped and no runtime, while production is not provisioned. Production begins zonal and max one, with min zero while install-ready without active customers and min one for active processing; Regional HA, Cloud Armor, and a physical API/worker split require measured need.
 
 ## Core request/event context
 

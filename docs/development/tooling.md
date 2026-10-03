@@ -18,6 +18,10 @@ This is the canonical prerequisite and machine-migration guide for Line Item Wat
 | Google Terraform provider | 8.5.0 | Terraform constraints and both environment lockfiles |
 | Docker with Compose | Current supported Docker Desktop | Local PostgreSQL, Testcontainers, OCI verification, Playwright image |
 | `curl` | Current supported release | Local health/readiness checks |
+| Python | Current supported Python 3 | Terraform saved-plan safety classifier used by `./scripts/liw` |
+| Trivy | Current supported release | Local application/assurance image vulnerability and secret scans |
+| Gitleaks | Current supported release; CI pins container `v8.29.1` | Repository secret scanning |
+| actionlint | Current supported release | GitHub Actions validation and canonical automation verification |
 
 ## Recommended operational tools
 
@@ -28,8 +32,7 @@ This is the canonical prerequisite and machine-migration guide for Line Item Wat
 | `psql` client | PostgreSQL 18-compatible administration and role bootstrap; the server is not installed locally |
 | `jq` | JSON verification and safe command-line inspection |
 | `openssl` | Local cryptographic inspection/generation under the documented secret-handling rules |
-| Gitleaks | Secret scanning; CI pins container `v8.29.1` |
-| actionlint | GitHub Actions validation; use a current release compatible with repository workflows |
+| ShellCheck | Additional shell static analysis; `verify automation` runs it when installed |
 
 ## Project- and container-managed tools
 
@@ -44,7 +47,7 @@ The current Cloud Run/Cloud SQL modular-monolith architecture does not require `
 ## Concise macOS setup
 
 1. Install Xcode Command Line Tools (`xcode-select --install`) for Git and the system SSH toolchain. Install Homebrew if it is not already managed on the machine.
-2. Install general tools as needed: `brew install git gh jq openssl libpq gitleaks actionlint`. Add Homebrew `libpq` to `PATH` if its keg-only `psql` is not visible.
+2. Install general tools as needed: `brew install git gh jq openssl libpq python trivy gitleaks actionlint shellcheck`. Add Homebrew `libpq` to `PATH` if its keg-only `psql` is not visible.
 3. Install a Temurin (or equivalent compatible) Java 25 distribution. SDKMAN is convenient: inspect `sdk list java`, install a listed Temurin 25 identifier, and select it. Verify the major version before running Maven.
 4. Install Node 20.17.0 with an existing Node version manager or the official distribution. With `nvm`, run `nvm install` and `nvm use` from the repository root; `.nvmrc` supplies the version. A Node version manager is helpful, not a project runtime dependency.
 5. Use the Maven Wrapper; do not install Maven separately.
@@ -114,26 +117,15 @@ jq --version
 openssl version
 gitleaks version
 actionlint --version
+python3 --version
+trivy --version
+shellcheck --version
 ```
 
-Then run the safe project checks relevant to the machine:
+Then run the canonical safe project checks relevant to the machine:
 
 ```sh
-./backend/mvnw -f backend/pom.xml verify
-npm --prefix src/app/cards ci
-npm --prefix src/app/cards run typecheck
-npm --prefix src/app/cards run lint
-npm --prefix src/app/cards test -- --run
-hs project lint --install-missing-deps=false --no-color
-terraform fmt -check -recursive infra
-terraform -chdir=infra/staging init -backend=false -reconfigure
-terraform -chdir=infra/staging validate
-terraform -chdir=infra/production init -backend=false -reconfigure
-terraform -chdir=infra/production validate
-npm --prefix assurance ci
-npm --prefix assurance run typecheck
-npm --prefix assurance run test:config
-npm --prefix assurance test
+./scripts/liw verify all
 ```
 
 Backend integration tests require a running Docker daemon. Playwright requires its package-matched Chromium (`npm --prefix assurance exec -- playwright install chromium`) when it is not already available. The backend-disabled Terraform commands do not read or write live remote state.

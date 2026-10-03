@@ -22,6 +22,13 @@ Every task must:
 6. decide whether architecture actually changes—never change it incidentally; and
 7. establish the available build, test, lint, formatting, validation, and secret-scan commands without inventing results.
 
+## Canonical automation
+
+- Use `./scripts/liw` and the public workflows documented in [automation guide](docs/operations/automation-guide.md) for standard verification, artifact, Terraform, lifecycle, delivery, and promotion work.
+- Do not reconstruct or manually repeat a procedure already encoded there. Deviate only while diagnosing, repairing, or extending the automation itself, and then return the reusable fix to the canonical surface.
+- Preserve the documented parameters, exit codes, immutable-digest contract, approval boundaries, and WIF-only external authentication. Never introduce a generic infrastructure apply path.
+- Future coding-agent work should provide delta context and invoke the canonical jobs instead of restating historical command sequences.
+
 ## Architecture and implementation rules
 
 - Preserve the modular monolith and explicit Platform Core/Product Module ownership.

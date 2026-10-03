@@ -1,0 +1,590 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+plan_classifier="$repository_root/scripts/lib/terraform-plan-safety.py"
+
+fail() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
+
+note() {
+  echo "==> $*"
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "Required command is not installed: $1"
+}
+
+require_full_sha() {
+  [[ "$1" =~ ^[0-9a-f]{40}$ ]] || fail "revision must be a full lowercase 40-character Git SHA"
+}
+
+reject_latest() {
+  [[ "$1" != -* ]] || fail "references beginning with '-' are forbidden: $1"
+  case "$1" in
+    latest|*:latest|*/latest)
+      fail "mutable latest references are forbidden: $1"
+      ;;
+  esac
+}
+
+usage() {
+  cat <<'EOF'
+Line Item Watch canonical operations
+
+Usage:
+  ./scripts/liw help
+  ./scripts/liw verify [all|backend|frontend|infra|assurance|artifacts|automation]
+  ./scripts/liw artifact build --revision <full-sha> [--app-image <tag>] [--assurance-image <tag>]
+  ./scripts/liw artifact inspect --revision <full-sha> [--app-image <ref>] [--assurance-image <ref>]
+  ./scripts/liw artifact verify --revision <full-sha> [--app-image <tag>] [--assurance-image <tag>]
+  ./scripts/liw infra validate [all|staging|production]
+  ./scripts/liw infra plan <staging|production> --out <plan.tfplan> [--var-file <file>]
+  ./scripts/liw infra status <staging|production>
+  ./scripts/liw env status staging
+  ./scripts/liw env plan-park staging --out <plan.tfplan> [--var-file <file>]
+  ./scripts/liw env plan-unpark staging --out <plan.tfplan> [--var-file <file>]
+  ./scripts/liw env park staging --plan <reviewed.tfplan> [--var-file <file>] --confirm APPLY_STAGING_PARK
+  ./scripts/liw env unpark staging --plan <reviewed.tfplan> [--var-file <file>] --confirm APPLY_STAGING_UNPARK
+
+Safety:
+  - plan/status are read-only apart from Terraform backend metadata, locking, and local plan files.
+  - park/unpark are the only apply-capable commands. They accept only staging, reclassify the
+    exact previously reviewed saved plan, verify lifecycle variables, and require the exact token shown.
+  - there is no generic apply, destroy, import, state-edit, force-unlock, or production mutation.
+  - account-specific inputs stay in TF_VAR_* variables or ignored, restricted variable files.
+
+Exit codes:
+  0 success; 1 invalid input/tool/command failure; 2 unsafe Terraform plan; 3 invalid plan JSON.
+EOF
+}
+
+usage_artifact() {
+  cat <<'EOF'
+Usage:
+  ./scripts/liw artifact build --revision <full-sha> [--app-image <tag>] [--assurance-image <tag>]
+  ./scripts/liw artifact inspect --revision <full-sha> [--app-image <ref>] [--assurance-image <ref>]
+  ./scripts/liw artifact verify --revision <full-sha> [--app-image <tag>] [--assurance-image <tag>]
+
+build creates both local artifacts. inspect verifies labels, non-root execution, application
+content/runtime-role metadata, Java runtime minimality, and assurance fail-closed behavior.
+verify performs build + inspect + fixable HIGH/CRITICAL vulnerability and secret scans.
+No artifact command pushes to a registry.
+EOF
+}
+
+parse_artifact_args() {
+  revision=""
+  app_image=""
+  assurance_image=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --revision)
+        [[ $# -ge 2 ]] || fail "--revision requires a value"
+        revision="$2"
+        shift 2
+        ;;
+      --app-image)
+        [[ $# -ge 2 ]] || fail "--app-image requires a value"
+        app_image="$2"
+        shift 2
+        ;;
+      --assurance-image)
+        [[ $# -ge 2 ]] || fail "--assurance-image requires a value"
+        assurance_image="$2"
+        shift 2
+        ;;
+      -h|--help)
+        usage_artifact
+        exit 0
+        ;;
+      *) fail "Unknown artifact argument: $1" ;;
+    esac
+  done
+
+  [[ -n "$revision" ]] || fail "--revision is required"
+  require_full_sha "$revision"
+  app_image="${app_image:-line-item-watch:$revision}"
+  assurance_image="${assurance_image:-line-item-watch-assurance:$revision}"
+  reject_latest "$app_image"
+  reject_latest "$assurance_image"
+}
+
+artifact_build() {
+  parse_artifact_args "$@"
+  require_command docker
+  note "Building application artifact $app_image"
+  docker build \
+    --build-arg "SOURCE_REVISION=$revision" \
+    --build-arg BUILD_TIME=1970-01-01T00:00:00Z \
+    --tag "$app_image" \
+    "$repository_root"
+  note "Building assurance artifact $assurance_image"
+  docker build \
+    --file "$repository_root/assurance/Dockerfile" \
+    --build-arg "SOURCE_REVISION=$revision" \
+    --build-arg BUILD_TIME=1970-01-01T00:00:00Z \
+    --tag "$assurance_image" \
+    "$repository_root"
+}
+
+inspect_label() {
+  local image="$1"
+  local label="$2"
+  docker image inspect --format "{{index .Config.Labels \"$label\"}}" "$image"
+}
+
+artifact_inspect() {
+  parse_artifact_args "$@"
+  require_command docker
+  require_command python3
+
+  docker image inspect "$app_image" >/dev/null
+  docker image inspect "$assurance_image" >/dev/null
+
+  [[ "$(inspect_label "$app_image" org.opencontainers.image.revision)" == "$revision" ]] \
+    || fail "Application revision label does not match $revision"
+  [[ "$(inspect_label "$app_image" com.udmconsulting.line-item-watch.image-type)" == "application" ]] \
+    || fail "Application image-type label is invalid"
+  [[ "$(inspect_label "$app_image" com.udmconsulting.line-item-watch.runtime-roles)" == "SERVICE,MIGRATE,OPERATOR" ]] \
+    || fail "Application runtime-role label is invalid"
+  [[ "$(docker image inspect --format '{{.Config.User}}' "$app_image")" == "10001:10001" ]] \
+    || fail "Application image must run as 10001:10001"
+  docker run --rm --entrypoint java "$app_image" -version 2>&1 | grep -Eq 'version "25\.' \
+    || fail "Application image is not using Java 25"
+  docker run --rm --entrypoint sh "$app_image" -eu -c '
+    test "$(id -u)" = 10001
+    ! command -v javac
+    ! command -v mvn
+    test ! -d /workspace
+    test ! -e /opt/app/src
+    test ! -e /opt/app/application-local.yaml
+    test ! -e /opt/app/application-local.yml
+    test ! -e /opt/app/config/application-local.yaml
+    test ! -e /opt/app/config/application-local.yml
+  '
+  local inspection_directory container_id
+  inspection_directory="$(mktemp -d "${TMPDIR:-/tmp}/liw-artifact-inspect.XXXXXX")"
+  container_id="$(docker create "$app_image")"
+  if ! docker cp "$container_id:/opt/app/application.jar" "$inspection_directory/application.jar" >/dev/null; then
+    docker rm "$container_id" >/dev/null 2>&1 || true
+    rm -rf "$inspection_directory"
+    fail "Cannot extract the application JAR for inspection"
+  fi
+  docker rm "$container_id" >/dev/null
+  if ! python3 "$repository_root/scripts/lib/inspect-application-jar.py" \
+      "$inspection_directory/application.jar"; then
+    rm -rf "$inspection_directory"
+    fail "Compiled application artifact inspection failed"
+  fi
+  rm -rf "$inspection_directory"
+
+  [[ "$(inspect_label "$assurance_image" org.opencontainers.image.revision)" == "$revision" ]] \
+    || fail "Assurance revision label does not match $revision"
+  [[ "$(inspect_label "$assurance_image" com.udmconsulting.line-item-watch.image-type)" == "assurance" ]] \
+    || fail "Assurance image-type label is invalid"
+  [[ "$(docker image inspect --format '{{.Config.User}}' "$assurance_image")" == "pwuser" ]] \
+    || fail "Assurance image must run as pwuser"
+  if docker run --rm "$assurance_image"; then
+    fail "Assurance image accepted missing live target configuration"
+  fi
+
+  note "Artifact inspection passed for application and assurance images"
+}
+
+artifact_verify() {
+  parse_artifact_args "$@"
+  artifact_build --revision "$revision" --app-image "$app_image" --assurance-image "$assurance_image"
+  artifact_inspect --revision "$revision" --app-image "$app_image" --assurance-image "$assurance_image"
+  require_command trivy
+  note "Scanning application artifact OS packages"
+  trivy image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL --pkg-types os --scanners vuln "$app_image"
+  note "Scanning application artifact for embedded secrets"
+  trivy image --exit-code 1 --scanners secret "$app_image"
+  note "Scanning assurance artifact OS packages"
+  trivy image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL --pkg-types os --scanners vuln "$assurance_image"
+  note "Scanning assurance artifact for embedded secrets"
+  trivy image --exit-code 1 --scanners secret "$assurance_image"
+}
+
+require_terraform_version() {
+  require_command terraform
+  require_command python3
+  local actual
+  actual="$(terraform version -json | python3 -c 'import json,sys; print(json.load(sys.stdin)["terraform_version"])')"
+  [[ "$actual" == "1.13.5" ]] || fail "Terraform 1.13.5 is required; found $actual"
+}
+
+infra_validate_root() {
+  local environment="$1"
+  terraform -chdir="$repository_root/infra/$environment" init -backend=false -input=false
+  terraform -chdir="$repository_root/infra/$environment" validate
+}
+
+infra_validate() {
+  local target="${1:-all}"
+  [[ $# -le 1 ]] || fail "infra validate accepts at most one target"
+  case "$target" in
+    all|staging|production) ;;
+    *) fail "infra validate target must be all, staging, or production" ;;
+  esac
+  require_command python3
+  require_terraform_version
+  terraform -chdir="$repository_root" fmt -check -recursive infra
+  bash "$repository_root/infra/tests/verify-contracts.sh"
+  if [[ "$target" == "all" ]]; then
+    terraform -chdir="$repository_root/infra/modules/environment" init -backend=false -input=false
+    terraform -chdir="$repository_root/infra/modules/environment" test
+    infra_validate_root staging
+    infra_validate_root production
+  else
+    infra_validate_root "$target"
+  fi
+}
+
+validate_environment() {
+  case "$1" in
+    staging|production) ;;
+    *) fail "environment must be staging or production" ;;
+  esac
+}
+
+absolute_existing_file() {
+  local file="$1"
+  [[ -f "$file" ]] || fail "File does not exist: $file"
+  (cd "$(dirname "$file")" && printf '%s/%s\n' "$(pwd)" "$(basename "$file")")
+}
+
+absolute_output_file() {
+  local file="$1"
+  local directory
+  directory="$(dirname "$file")"
+  [[ -d "$directory" ]] || fail "Output directory does not exist: $directory"
+  (cd "$directory" && printf '%s/%s\n' "$(pwd)" "$(basename "$file")")
+}
+
+init_remote_backend() {
+  local environment="$1"
+  terraform -chdir="$repository_root/infra/$environment" init -reconfigure -input=false
+  local workspace
+  workspace="$(terraform -chdir="$repository_root/infra/$environment" workspace show)"
+  [[ "$workspace" == "default" ]] || fail "Only the default Terraform workspace is allowed; found $workspace"
+}
+
+classify_saved_plan() {
+  local environment="$1"
+  local operation="$2"
+  local plan_path="$3"
+  local require_no_changes="${4:-false}"
+  local plan_json result
+  plan_json="$(mktemp "${TMPDIR:-/tmp}/liw-plan.XXXXXX.json")"
+  if ! terraform -chdir="$repository_root/infra/$environment" show -json "$plan_path" >"$plan_json"; then
+    rm -f "$plan_json"
+    fail "Cannot render saved Terraform plan: $plan_path"
+  fi
+  local -a classifier_args
+  classifier_args=(--environment "$environment" --operation "$operation")
+  [[ "$require_no_changes" != true ]] || classifier_args+=(--require-no-changes)
+  if python3 "$plan_classifier" "${classifier_args[@]}" "$plan_json"; then
+    result=0
+  else
+    result=$?
+  fi
+  rm -f "$plan_json"
+  return "$result"
+}
+
+run_infra_plan() {
+  local environment="$1"
+  local operation="$2"
+  shift 2
+  validate_environment "$environment"
+  require_command python3
+  require_terraform_version
+
+  local out=""
+  local var_file=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --out)
+        [[ $# -ge 2 ]] || fail "--out requires a value"
+        out="$(absolute_output_file "$2")"
+        shift 2
+        ;;
+      --var-file)
+        [[ $# -ge 2 ]] || fail "--var-file requires a value"
+        var_file="$(absolute_existing_file "$2")"
+        shift 2
+        ;;
+      *) fail "Unknown Terraform plan argument: $1" ;;
+    esac
+  done
+  [[ -n "$out" ]] || fail "--out is required so the reviewed plan has an explicit path"
+  [[ "$out" == *.tfplan ]] || fail "--out must end in .tfplan"
+  reject_latest "$out"
+
+  init_remote_backend "$environment"
+  terraform -chdir="$repository_root/infra/$environment" validate
+
+  local -a plan_args
+  plan_args=(-input=false -lock-timeout=60s "-out=$out")
+  [[ -z "$var_file" ]] || plan_args+=("-var-file=$var_file")
+  case "$operation" in
+    plan) ;;
+    park)
+      [[ "$environment" == "staging" ]] || fail "park planning is staging-only"
+      plan_args+=("-var=staging_parked=true" "-var=database_bootstrap_active=false")
+      ;;
+    unpark)
+      [[ "$environment" == "staging" ]] || fail "unpark planning is staging-only"
+      plan_args+=("-var=staging_parked=false" "-var=database_bootstrap_active=false")
+      ;;
+    *) fail "Internal error: unsupported plan operation $operation" ;;
+  esac
+
+  note "Creating reviewed $environment $operation plan at $out"
+  terraform -chdir="$repository_root/infra/$environment" plan "${plan_args[@]}"
+
+  classify_saved_plan "$environment" "$operation" "$out"
+  note "Saved plan retained for human review: $out"
+}
+
+infra_status() {
+  local environment="${1:-}"
+  [[ $# -eq 1 ]] || fail "Usage: ./scripts/liw infra status <staging|production>"
+  validate_environment "$environment"
+  require_terraform_version
+  require_command gcloud
+  init_remote_backend "$environment"
+
+  note "Terraform state addresses ($environment)"
+  terraform -chdir="$repository_root/infra/$environment" state list
+  note "Terraform outputs ($environment)"
+  terraform -chdir="$repository_root/infra/$environment" output
+
+  local repository project_id
+  repository="$(terraform -chdir="$repository_root/infra/$environment" output -raw artifact_registry_repository 2>/dev/null)" \
+    || fail "Cannot derive project from Terraform output; verify the environment state exists"
+  project_id="$(printf '%s\n' "$repository" | awk -F/ '{print $2}')"
+  [[ -n "$project_id" ]] || fail "Cannot derive project ID from artifact registry output"
+
+  note "Observed GCP project"
+  gcloud projects describe "$project_id" --format='table(projectId,name,lifecycleState)'
+  note "Observed Cloud SQL instances"
+  gcloud sql instances list --project "$project_id" --format='table(name,region,databaseVersion,state,settings.activationPolicy)'
+  note "Observed Cloud Run services"
+  gcloud run services list --project "$project_id" --region europe-west1 --format='table(name,status.url,status.latestReadyRevisionName)'
+  note "Observed Cloud Run jobs"
+  gcloud run jobs list --project "$project_id" --region europe-west1 --format='table(name,terminalCondition.state)'
+}
+
+parse_lifecycle_apply_args() {
+  lifecycle_plan=""
+  lifecycle_var_file=""
+  lifecycle_confirm=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --plan)
+        [[ $# -ge 2 ]] || fail "--plan requires a value"
+        lifecycle_plan="$2"
+        shift 2
+        ;;
+      --var-file)
+        [[ $# -ge 2 ]] || fail "--var-file requires a value"
+        lifecycle_var_file="$2"
+        shift 2
+        ;;
+      --confirm)
+        [[ $# -ge 2 ]] || fail "--confirm requires a value"
+        lifecycle_confirm="$2"
+        shift 2
+        ;;
+      *) fail "Unknown lifecycle argument: $1" ;;
+    esac
+  done
+}
+
+environment_apply() {
+  local operation="$1"
+  local environment="$2"
+  shift 2
+  [[ "$environment" == "staging" ]] || fail "$operation is staging-only"
+  parse_lifecycle_apply_args "$@"
+  [[ -n "$lifecycle_plan" ]] || fail "--plan is required"
+  local expected="APPLY_STAGING_$(printf '%s' "$operation" | tr '[:lower:]' '[:upper:]')"
+  [[ "$lifecycle_confirm" == "$expected" ]] \
+    || fail "$operation requires --confirm $expected after separate external approval"
+
+  lifecycle_plan="$(absolute_existing_file "$lifecycle_plan")"
+  [[ "$lifecycle_plan" == *.tfplan ]] || fail "--plan must end in .tfplan"
+  if [[ -n "$lifecycle_var_file" ]]; then
+    lifecycle_var_file="$(absolute_existing_file "$lifecycle_var_file")"
+  fi
+  init_remote_backend staging
+  classify_saved_plan staging "$operation" "$lifecycle_plan"
+
+  note "Applying only the previously reviewed and reclassified staging $operation plan"
+  terraform -chdir="$repository_root/infra/staging" apply -input=false "$lifecycle_plan"
+
+  local post_plan
+  post_plan="$(mktemp "${TMPDIR:-/tmp}/liw-staging-${operation}-post.XXXXXX.tfplan")"
+  local -a post_args
+  post_args=(-input=false -lock-timeout=60s "-out=$post_plan")
+  [[ -z "$lifecycle_var_file" ]] || post_args+=("-var-file=$lifecycle_var_file")
+  if [[ "$operation" == "park" ]]; then
+    post_args+=("-var=staging_parked=true")
+  else
+    post_args+=("-var=staging_parked=false")
+  fi
+  post_args+=("-var=database_bootstrap_active=false")
+  if ! terraform -chdir="$repository_root/infra/staging" plan "${post_args[@]}"; then
+    rm -f "$post_plan"
+    fail "The staging $operation apply completed, but the required post-apply plan failed"
+  fi
+  local post_result=0
+  classify_saved_plan staging plan "$post_plan" true || post_result=$?
+  rm -f "$post_plan"
+  [[ "$post_result" -eq 0 ]] || return "$post_result"
+  note "Staging $operation completed and the post-apply plan reports no changes"
+}
+
+verify_backend() {
+  "$repository_root/backend/mvnw" --batch-mode --no-transfer-progress -f "$repository_root/backend/pom.xml" verify
+}
+
+verify_frontend() {
+  require_command npm
+  npm --prefix "$repository_root/src/app/cards" ci
+  npm --prefix "$repository_root/src/app/cards" run typecheck
+  npm --prefix "$repository_root/src/app/cards" test -- --run
+  npm --prefix "$repository_root/src/app/cards" run lint
+  npm --prefix "$repository_root/src/app/cards" run format:check
+}
+
+verify_assurance() {
+  require_command npm
+  npm --prefix "$repository_root/assurance" ci
+  npm --prefix "$repository_root/assurance" exec -- playwright install chromium
+  npm --prefix "$repository_root/assurance" run typecheck
+  npm --prefix "$repository_root/assurance" run test:config
+  npm --prefix "$repository_root/assurance" test
+  npm --prefix "$repository_root/assurance" run test:visual
+}
+
+verify_security() {
+  require_command npm
+  require_command gitleaks
+  "$repository_root/backend/mvnw" --batch-mode --no-transfer-progress -f "$repository_root/backend/pom.xml" \
+    -Pdependency-audit org.owasp:dependency-check-maven:check
+  npm --prefix "$repository_root/src/app/cards" audit --omit=dev --audit-level=high
+  npm --prefix "$repository_root/assurance" audit --omit=dev --audit-level=high
+  gitleaks detect --source "$repository_root" --redact
+}
+
+verify_automation() {
+  bash "$repository_root/scripts/tests/automation-contracts.sh"
+  require_command actionlint
+  actionlint "$repository_root"/.github/workflows/*.yml
+  if command -v shellcheck >/dev/null 2>&1; then
+    shellcheck "$repository_root/scripts/liw" "$repository_root/scripts/tests/automation-contracts.sh" \
+      "$repository_root/infra/tests/verify-contracts.sh"
+  else
+    note "shellcheck is not installed; static shell validation skipped"
+  fi
+}
+
+verify_scope() {
+  local scope="${1:-all}"
+  [[ $# -le 1 ]] || fail "verify accepts one scope"
+  case "$scope" in
+    backend) verify_backend ;;
+    frontend) verify_frontend ;;
+    infra) infra_validate all ;;
+    assurance) verify_assurance ;;
+    artifacts)
+      local revision
+      revision="$(git -C "$repository_root" rev-parse HEAD)"
+      artifact_verify --revision "$revision"
+      ;;
+    automation) verify_automation ;;
+    all)
+      verify_backend
+      verify_frontend
+      infra_validate all
+      verify_assurance
+      verify_automation
+      require_command hs
+      hs project lint --install-missing-deps=false --no-color
+      local revision
+      revision="$(git -C "$repository_root" rev-parse HEAD)"
+      artifact_verify --revision "$revision"
+      verify_security
+      git -C "$repository_root" diff --check
+      ;;
+    *) fail "verify scope must be all, backend, frontend, infra, assurance, artifacts, or automation" ;;
+  esac
+}
+
+main() {
+  cd "$repository_root"
+  local command="${1:-help}"
+  [[ $# -eq 0 ]] || shift
+  case "$command" in
+    help|-h|--help) usage ;;
+    verify) verify_scope "$@" ;;
+    artifact)
+      local action="${1:-}"
+      [[ $# -eq 0 ]] || shift
+      case "$action" in
+        build) artifact_build "$@" ;;
+        inspect) artifact_inspect "$@" ;;
+        verify) artifact_verify "$@" ;;
+        help|-h|--help|"") usage_artifact ;;
+        *) fail "Unknown artifact action: $action" ;;
+      esac
+      ;;
+    infra)
+      local action="${1:-}"
+      [[ $# -eq 0 ]] || shift
+      case "$action" in
+        validate) infra_validate "$@" ;;
+        plan)
+          [[ $# -ge 1 ]] || fail "Usage: ./scripts/liw infra plan <environment> --out <plan.tfplan>"
+          local environment="$1"
+          shift
+          run_infra_plan "$environment" plan "$@"
+          ;;
+        status) infra_status "$@" ;;
+        *) fail "Unknown infra action: ${action:-<missing>}" ;;
+      esac
+      ;;
+    env)
+      local action="${1:-}"
+      [[ $# -eq 0 ]] || shift
+      case "$action" in
+        status)
+          [[ "${1:-}" == "staging" ]] || fail "env status currently supports staging only"
+          infra_status "$@"
+          ;;
+        plan-park|plan-unpark)
+          [[ $# -ge 1 ]] || fail "Usage: ./scripts/liw env $action staging --out <plan.tfplan>"
+          local environment="$1"
+          shift
+          run_infra_plan "$environment" "${action#plan-}" "$@"
+          ;;
+        park|unpark)
+          [[ $# -ge 1 ]] || fail "Usage: ./scripts/liw env $action staging --plan <reviewed.tfplan> --confirm <token>"
+          local environment="$1"
+          shift
+          environment_apply "$action" "$environment" "$@"
+          ;;
+        *) fail "Unknown env action: ${action:-<missing>}" ;;
+      esac
+      ;;
+    *) fail "Unknown command: $command (run ./scripts/liw help)" ;;
+  esac
+}
+
+main "$@"

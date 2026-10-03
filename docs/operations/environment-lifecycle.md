@@ -20,19 +20,19 @@ Current status is recorded in [GCP environment inventory](gcp-environment-invent
 
 Run the pinned Terraform version from a clean understanding of the existing worktree. Supply account-specific billing metadata locally through `TF_VAR_billing_account_id` or an ignored, permission-restricted variable file; never commit it.
 
+Use the canonical commands and parameter/exit-code contract in the [automation guide](automation-guide.md):
+
 ```sh
-terraform fmt -check -recursive infra
-terraform -chdir=infra/staging init -reconfigure -input=false
-terraform -chdir=infra/staging validate
-terraform -chdir=infra/staging plan -out=staging-reviewed.tfplan
-terraform -chdir=infra/staging show staging-reviewed.tfplan
-terraform -chdir=infra/staging apply staging-reviewed.tfplan
-terraform -chdir=infra/staging plan -detailed-exitcode
+./scripts/liw infra validate all
+./scripts/liw infra plan staging --var-file <ignored-file> --out /tmp/staging-reviewed.tfplan
+./scripts/liw env status staging
 ```
 
 Every apply requires explicit authorization for the reviewed saved plan. An exit code of 0 on the final plan means `NO CHANGES`; 2 means changes remain and requires investigation. Never apply a freshly regenerated plan under an approval that covered a different saved plan. Delete local plans and transient billing files after review/application; never delete remote state.
 
-## Completed S1 partial-apply recovery
+The only apply-capable canonical commands are the staging-specific `env park` and `env unpark` controls. Their matching plan commands force `database_bootstrap_active=false`; apply accepts and reclassifies that exact previously reviewed plan, verifies the lifecycle values, requires an explicit confirmation token, and requires a no-changes post-plan. There is intentionally no generic or production apply wrapper.
+
+## Completed S1 recovery
 
 The first S1 apply preserved 55 successfully created addresses. The separately approved recovery completed on 2026-10-03:
 

@@ -4,6 +4,20 @@ Line Item Watch is the first Product Module of a planned modular B2B SaaS. Its i
 
 The repository contains the accepted HubSpot feasibility probes, a production backend foundation, and the first HubSpot Deal App Card. The backend provides internal Tenant and Platform Connection identity, module entitlements, HubSpot OAuth installation, encrypted refresh-credential lifecycle, on-demand token refresh, an internal uninstall capability, explicit one-Deal baseline synchronization, authenticated HubSpot webhook ingestion, deterministic PostgreSQL-backed processing of immutable Line Item signals into audit history and a derived latest projection, tracked-scope reconciliation, provider-free replay and recovery, policy-gated retention mechanics, and a disabled-by-default signed Deal-scoped audit read API. The Deal-only card renders that retained state and recent history with independent cursor pagination, reliability warnings, and English/Hungarian localization.
 
+## Canonical operations
+
+Run `./scripts/liw help` for the supported local job surface. Common entry points are:
+
+```sh
+./scripts/liw verify all
+./scripts/liw artifact build --revision "$(git rev-parse HEAD)"
+./scripts/liw artifact inspect --revision "$(git rev-parse HEAD)"
+./scripts/liw infra validate all
+./scripts/liw env status staging
+```
+
+Terraform planning, staging park/unpark, artifact publication, staging delivery, production promotion, parameters, external effects, and approval boundaries are in the [canonical automation guide](docs/operations/automation-guide.md). Do not reconstruct those procedures from workflow YAML or historical prompts.
+
 ## Backend foundation
 
 The single Maven module under `backend/` uses Java 25, Spring Boot 4.1.1, Spring MVC, PostgreSQL 18.6, Liquibase, Spring Data JPA, Testcontainers, and ArchUnit. From the repository root:
@@ -55,6 +69,7 @@ HubSpot project validation is profile-dependent. Create/select a profile with th
 - [GCP bootstrap inventory](docs/operations/gcp-bootstrap-inventory.md)
 - [GCP environment inventory](docs/operations/gcp-environment-inventory.md)
 - [Environment lifecycle and Terraform operations](docs/operations/environment-lifecycle.md)
+- [Canonical automation guide](docs/operations/automation-guide.md)
 - [Provider exit and decommission plan](docs/operations/provider-exit-plan.md)
 - [Production runbooks](docs/operations/production-runbooks.md)
 - [Deployment and environment preparation](docs/development/deployment.md)

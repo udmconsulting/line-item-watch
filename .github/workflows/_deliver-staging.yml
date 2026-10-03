@@ -1,0 +1,197 @@
+name: Reusable staging delivery
+
+on:
+  workflow_call:
+    inputs:
+      revision:
+        description: Full 40-character Git SHA selected from main
+        required: true
+        type: string
+      artifact_only:
+        description: Publish artifacts and stop before runtime changes
+        required: true
+        type: boolean
+      run_migrations:
+        description: Run the migration job before deployment
+        required: true
+        type: boolean
+      verify:
+        description: Run readiness and real HubSpot staging verification
+        required: true
+        type: boolean
+
+concurrency:
+  group: staging-delivery
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate source, mode, and required staging configuration
+        env:
+          REVISION: ${{ inputs.revision }}
+          ARTIFACT_ONLY: ${{ inputs.artifact_only }}
+          RUN_MIGRATIONS: ${{ inputs.run_migrations }}
+          VERIFY: ${{ inputs.verify }}
+          PROJECT_ID: ${{ vars.GCP_STAGING_PROJECT_ID }}
+          WIF_PROVIDER: ${{ vars.GCP_STAGING_WIF_PROVIDER }}
+          DEPLOYER_SERVICE_ACCOUNT: ${{ vars.GCP_STAGING_DEPLOYER_SERVICE_ACCOUNT }}
+          REPOSITORY: ${{ vars.GCP_STAGING_ARTIFACT_REPOSITORY }}
+          MIGRATION_JOB: ${{ vars.GCP_STAGING_MIGRATION_JOB }}
+          SERVICE: ${{ vars.GCP_STAGING_SERVICE }}
+          API_ORIGIN: ${{ vars.GCP_STAGING_API_ORIGIN }}
+          HUBSPOT_RECORD_URL: ${{ secrets.LIW_STAGING_HUBSPOT_RECORD_URL }}
+          HUBSPOT_STORAGE_STATE_JSON: ${{ secrets.LIW_STAGING_HUBSPOT_STORAGE_STATE_JSON }}
+          ASSURANCE_FIXTURE_JSON: ${{ vars.LIW_STAGING_ASSURANCE_FIXTURE_JSON }}
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          if ! printf '%s\n' "$REVISION" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "revision must be a full lowercase 40-character Git SHA" >&2
+            exit 1
+          fi
+          test "$REVISION" = "$GITHUB_SHA"
+          require_value() {
+            if [ -z "$2" ]; then
+              echo "Required staging Environment value is empty: $1" >&2
+              exit 1
+            fi
+          }
+          require_value GCP_STAGING_PROJECT_ID "$PROJECT_ID"
+          require_value GCP_STAGING_WIF_PROVIDER "$WIF_PROVIDER"
+          require_value GCP_STAGING_DEPLOYER_SERVICE_ACCOUNT "$DEPLOYER_SERVICE_ACCOUNT"
+          require_value GCP_STAGING_ARTIFACT_REPOSITORY "$REPOSITORY"
+          case "$REPOSITORY" in *:latest) exit 1 ;; esac
+          if [ "$ARTIFACT_ONLY" = true ]; then
+            if [ "$RUN_MIGRATIONS" != false ] || [ "$VERIFY" != false ]; then
+              echo "artifact_only=true requires run_migrations=false and verify=false" >&2
+              exit 1
+            fi
+          else
+            if [ "$RUN_MIGRATIONS" != true ] || [ "$VERIFY" != true ]; then
+              echo "full staging delivery requires run_migrations=true and verify=true" >&2
+              exit 1
+            fi
+            require_value GCP_STAGING_MIGRATION_JOB "$MIGRATION_JOB"
+            require_value GCP_STAGING_SERVICE "$SERVICE"
+            require_value GCP_STAGING_API_ORIGIN "$API_ORIGIN"
+            require_value LIW_STAGING_HUBSPOT_RECORD_URL "$HUBSPOT_RECORD_URL"
+            require_value LIW_STAGING_HUBSPOT_STORAGE_STATE_JSON "$HUBSPOT_STORAGE_STATE_JSON"
+            require_value LIW_STAGING_ASSURANCE_FIXTURE_JSON "$ASSURANCE_FIXTURE_JSON"
+          fi
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_STAGING_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_STAGING_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_STAGING_DEPLOYER_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - uses: actions/setup-node@v7
+        if: ${{ !inputs.artifact_only && inputs.verify }}
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: assurance/package-lock.json
+      - name: Build, inspect, and push once
+        id: image
+        env:
+          REVISION: ${{ inputs.revision }}
+          REPOSITORY: ${{ vars.GCP_STAGING_ARTIFACT_REPOSITORY }}
+        run: |
+          gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
+          tagged_image="${REPOSITORY}/line-item-watch:${REVISION}"
+          synthetic_tagged_image="${REPOSITORY}/line-item-watch-assurance:${REVISION}"
+          ./scripts/liw artifact build \
+            --revision "$REVISION" \
+            --app-image "$tagged_image" \
+            --assurance-image "$synthetic_tagged_image"
+          ./scripts/liw artifact inspect \
+            --revision "$REVISION" \
+            --app-image "$tagged_image" \
+            --assurance-image "$synthetic_tagged_image"
+          docker push "$tagged_image"
+          docker push "$synthetic_tagged_image"
+          digest=$(gcloud artifacts docker images describe "$tagged_image" --format='value(image_summary.digest)')
+          synthetic_digest=$(gcloud artifacts docker images describe "$synthetic_tagged_image" --format='value(image_summary.digest)')
+          if ! printf '%s\n' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "resolved application digest is malformed" >&2
+            exit 1
+          fi
+          if ! printf '%s\n' "$synthetic_digest" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "resolved assurance digest is malformed" >&2
+            exit 1
+          fi
+          {
+            echo "digest=$digest"
+            echo "image=${REPOSITORY}/line-item-watch@${digest}"
+            echo "synthetic_digest=$synthetic_digest"
+            echo "synthetic_image=${REPOSITORY}/line-item-watch-assurance@${synthetic_digest}"
+          } >> "$GITHUB_OUTPUT"
+      - name: Run migration job with immutable image
+        if: ${{ !inputs.artifact_only && inputs.run_migrations }}
+        env:
+          PROJECT_ID: ${{ vars.GCP_STAGING_PROJECT_ID }}
+          MIGRATION_JOB: ${{ vars.GCP_STAGING_MIGRATION_JOB }}
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          gcloud run jobs update "$MIGRATION_JOB" --project "$PROJECT_ID" --region europe-west1 --image "$IMAGE" --quiet
+          gcloud run jobs execute "$MIGRATION_JOB" --project "$PROJECT_ID" --region europe-west1 --wait --quiet
+      - name: Deploy staging with immutable image and verify readiness
+        if: ${{ !inputs.artifact_only }}
+        env:
+          PROJECT_ID: ${{ vars.GCP_STAGING_PROJECT_ID }}
+          SERVICE: ${{ vars.GCP_STAGING_SERVICE }}
+          API_ORIGIN: ${{ vars.GCP_STAGING_API_ORIGIN }}
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          gcloud run services update "$SERVICE" --project "$PROJECT_ID" --region europe-west1 --image "$IMAGE" --quiet
+          for _ in $(seq 1 30); do
+            if curl --fail --silent --show-error "${API_ORIGIN}/actuator/health/readiness" >/dev/null; then
+              exit 0
+            fi
+            sleep 10
+          done
+          exit 1
+      - name: Run real HubSpot staging customer journey
+        if: ${{ !inputs.artifact_only && inputs.verify }}
+        env:
+          LIW_ASSURANCE_TARGET: staging
+          LIW_HUBSPOT_RECORD_URL: ${{ secrets.LIW_STAGING_HUBSPOT_RECORD_URL }}
+          LIW_HUBSPOT_STORAGE_STATE_JSON: ${{ secrets.LIW_STAGING_HUBSPOT_STORAGE_STATE_JSON }}
+          LIW_ASSURANCE_FIXTURE_JSON: ${{ vars.LIW_STAGING_ASSURANCE_FIXTURE_JSON }}
+          LIW_RELEASE_DIGEST: ${{ steps.image.outputs.digest }}
+          LIW_API_ORIGIN: ${{ vars.GCP_STAGING_API_ORIGIN }}
+        run: |
+          npm --prefix assurance ci
+          npm --prefix assurance exec -- playwright install --with-deps chromium
+          npm --prefix assurance run test:staging
+      - name: Retain sanitized staging result on failure
+        if: ${{ failure() && !inputs.artifact_only && inputs.verify }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: staging-ui-assurance-safe-evidence
+          path: assurance/test-results/safe-evidence.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Record immutable image references
+        env:
+          ARTIFACT_ONLY: ${{ inputs.artifact_only }}
+          IMAGE: ${{ steps.image.outputs.image }}
+          SYNTHETIC_IMAGE: ${{ steps.image.outputs.synthetic_image }}
+        run: |
+          {
+            echo "### Staging image digests"
+            echo "Application: ${IMAGE}"
+            echo "Assurance: ${SYNTHETIC_IMAGE}"
+            if [ "$ARTIFACT_ONLY" = true ]; then
+              echo "Artifact-only bootstrap: not migration-tested or staging-accepted."
+            else
+              echo "Migration, backend readiness, and the real HubSpot journey passed; both digests are staging-accepted."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

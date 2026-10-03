@@ -3,18 +3,28 @@ name: Promote production
 on:
   workflow_dispatch:
     inputs:
+      revision:
+        description: Full 40-character Git SHA recorded with staging acceptance
+        required: true
+        type: string
       staging_digest:
-        description: "Staging-accepted sha256 digest"
+        description: Staging-accepted application sha256 digest
         required: true
         type: string
       staging_synthetic_digest:
-        description: "Staging-accepted Playwright runner sha256 digest"
+        description: Staging-accepted assurance sha256 digest
         required: true
         type: string
-
-concurrency:
-  group: production-promotion
-  cancel-in-progress: false
+      run_migrations:
+        description: Run production migrations before traffic promotion
+        required: true
+        default: true
+        type: boolean
+      verify:
+        description: Require readiness and the read-only production synthetic
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -22,132 +32,10 @@ permissions:
 
 jobs:
   promote:
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - uses: actions/checkout@v7
-      - id: auth
-        uses: google-github-actions/auth@v3
-        with:
-          project_id: ${{ vars.GCP_PRODUCTION_PROJECT_ID }}
-          workload_identity_provider: ${{ vars.GCP_PRODUCTION_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_PRODUCTION_DEPLOYER_SERVICE_ACCOUNT }}
-      - uses: google-github-actions/setup-gcloud@v3
-      - name: Validate requested digest and configuration
-        env:
-          DIGEST: ${{ inputs.staging_digest }}
-          SYNTHETIC_DIGEST: ${{ inputs.staging_synthetic_digest }}
-          STAGING_REPOSITORY: ${{ vars.GCP_STAGING_ARTIFACT_REPOSITORY }}
-          PRODUCTION_REPOSITORY: ${{ vars.GCP_PRODUCTION_ARTIFACT_REPOSITORY }}
-          MIGRATION_JOB: ${{ vars.GCP_PRODUCTION_MIGRATION_JOB }}
-          SERVICE: ${{ vars.GCP_PRODUCTION_SERVICE }}
-          API_ORIGIN: ${{ vars.GCP_PRODUCTION_API_ORIGIN }}
-          SYNTHETIC_JOB: ${{ vars.GCP_PRODUCTION_SYNTHETIC_JOB }}
-        run: |
-          echo "$DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'
-          echo "$SYNTHETIC_DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'
-          test -n "$STAGING_REPOSITORY"
-          test -n "$PRODUCTION_REPOSITORY"
-          test -n "$MIGRATION_JOB"
-          test -n "$SERVICE"
-          test -n "$SYNTHETIC_JOB"
-          test "$API_ORIGIN" = "https://api.lineitemwatch.com"
-      - name: Copy the exact accepted manifest into production registry
-        id: image
-        env:
-          DIGEST: ${{ inputs.staging_digest }}
-          SYNTHETIC_DIGEST: ${{ inputs.staging_synthetic_digest }}
-          STAGING_REPOSITORY: ${{ vars.GCP_STAGING_ARTIFACT_REPOSITORY }}
-          PRODUCTION_REPOSITORY: ${{ vars.GCP_PRODUCTION_ARTIFACT_REPOSITORY }}
-        run: |
-          gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
-          source_image="${STAGING_REPOSITORY}/line-item-watch@${DIGEST}"
-          release_tag="${PRODUCTION_REPOSITORY}/line-item-watch:release-${GITHUB_RUN_ID}"
-          docker pull "$source_image"
-          docker tag "$source_image" "$release_tag"
-          docker push "$release_tag"
-          promoted_digest=$(gcloud artifacts docker images describe "$release_tag" --format='value(image_summary.digest)')
-          test "$promoted_digest" = "$DIGEST"
-          echo "image=${PRODUCTION_REPOSITORY}/line-item-watch@${DIGEST}" >> "$GITHUB_OUTPUT"
-          source_synthetic="${STAGING_REPOSITORY}/line-item-watch-assurance@${SYNTHETIC_DIGEST}"
-          synthetic_release_tag="${PRODUCTION_REPOSITORY}/line-item-watch-assurance:release-${GITHUB_RUN_ID}"
-          docker pull "$source_synthetic"
-          docker tag "$source_synthetic" "$synthetic_release_tag"
-          docker push "$synthetic_release_tag"
-          promoted_synthetic_digest=$(gcloud artifacts docker images describe "$synthetic_release_tag" --format='value(image_summary.digest)')
-          test "$promoted_synthetic_digest" = "$SYNTHETIC_DIGEST"
-          echo "synthetic_image=${PRODUCTION_REPOSITORY}/line-item-watch-assurance@${promoted_synthetic_digest}" >> "$GITHUB_OUTPUT"
-      - name: Run production migration job
-        env:
-          PROJECT_ID: ${{ vars.GCP_PRODUCTION_PROJECT_ID }}
-          MIGRATION_JOB: ${{ vars.GCP_PRODUCTION_MIGRATION_JOB }}
-          IMAGE: ${{ steps.image.outputs.image }}
-        run: |
-          gcloud run jobs update "$MIGRATION_JOB" --project "$PROJECT_ID" --region europe-west1 --image "$IMAGE" --quiet
-          gcloud run jobs execute "$MIGRATION_JOB" --project "$PROJECT_ID" --region europe-west1 --wait --quiet
-      - name: Deploy a no-traffic revision and confirm readiness
-        id: deploy
-        env:
-          PROJECT_ID: ${{ vars.GCP_PRODUCTION_PROJECT_ID }}
-          SERVICE: ${{ vars.GCP_PRODUCTION_SERVICE }}
-          IMAGE: ${{ steps.image.outputs.image }}
-        run: |
-          previous_revision=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region europe-west1 --format='value(status.traffic[percent=100].revisionName)')
-          gcloud run services update "$SERVICE" --project "$PROJECT_ID" --region europe-west1 --image "$IMAGE" --no-traffic --quiet
-          candidate_revision=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region europe-west1 --format='value(status.latestReadyRevisionName)')
-          test -n "$previous_revision"
-          test -n "$candidate_revision"
-          echo "previous_revision=$previous_revision" >> "$GITHUB_OUTPUT"
-          echo "candidate_revision=$candidate_revision" >> "$GITHUB_OUTPUT"
-      - name: Promote traffic, smoke, and roll back on failure
-        env:
-          PROJECT_ID: ${{ vars.GCP_PRODUCTION_PROJECT_ID }}
-          SERVICE: ${{ vars.GCP_PRODUCTION_SERVICE }}
-          API_ORIGIN: ${{ vars.GCP_PRODUCTION_API_ORIGIN }}
-          PREVIOUS_REVISION: ${{ steps.deploy.outputs.previous_revision }}
-        run: |
-          gcloud run services update-traffic "$SERVICE" --project "$PROJECT_ID" --region europe-west1 --to-latest --quiet
-          for _ in $(seq 1 30); do
-            if curl --fail --silent --show-error "${API_ORIGIN}/actuator/health/readiness" >/dev/null; then
-              exit 0
-            fi
-            sleep 10
-          done
-          gcloud run services update-traffic "$SERVICE" --project "$PROJECT_ID" --region europe-west1 --to-revisions "${PREVIOUS_REVISION}=100" --quiet
-          exit 1
-      - name: Run read-only production synthetic smoke
-        env:
-          PROJECT_ID: ${{ vars.GCP_PRODUCTION_PROJECT_ID }}
-          SYNTHETIC_JOB: ${{ vars.GCP_PRODUCTION_SYNTHETIC_JOB }}
-          SYNTHETIC_IMAGE: ${{ steps.image.outputs.synthetic_image }}
-          RELEASE_DIGEST: ${{ inputs.staging_digest }}
-          SERVICE: ${{ vars.GCP_PRODUCTION_SERVICE }}
-          PREVIOUS_REVISION: ${{ steps.deploy.outputs.previous_revision }}
-        run: |
-          if ! gcloud run jobs update "$SYNTHETIC_JOB" \
-              --project "$PROJECT_ID" \
-              --region europe-west1 \
-              --image "$SYNTHETIC_IMAGE" \
-              --update-env-vars "LIW_RELEASE_DIGEST=${RELEASE_DIGEST}" \
-              --quiet \
-            || ! gcloud run jobs execute "$SYNTHETIC_JOB" \
-              --project "$PROJECT_ID" \
-              --region europe-west1 \
-              --wait \
-              --quiet; then
-            gcloud run services update-traffic "$SERVICE" \
-              --project "$PROJECT_ID" \
-              --region europe-west1 \
-              --to-revisions "${PREVIOUS_REVISION}=100" \
-              --quiet
-            exit 1
-          fi
-      - name: Record release
-        run: |
-          {
-            echo "### Production release"
-            echo 'Image: ${{ steps.image.outputs.image }}'
-            echo 'Assurance image: ${{ steps.image.outputs.synthetic_image }}'
-            echo 'Revision: ${{ steps.deploy.outputs.candidate_revision }}'
-            echo 'Read-only production HubSpot synthetic: PASS'
-          } >> "$GITHUB_STEP_SUMMARY"
+    uses: ./.github/workflows/_promote-production.yml
+    with:
+      revision: ${{ inputs.revision }}
+      staging_digest: ${{ inputs.staging_digest }}
+      staging_synthetic_digest: ${{ inputs.staging_synthetic_digest }}
+      run_migrations: ${{ inputs.run_migrations }}
+      verify: ${{ inputs.verify }}

@@ -1,16 +1,14 @@
 # Deployment and environment preparation
 
-The manual GCP bootstrap is complete and inventoried in [GCP bootstrap inventory](../operations/gcp-bootstrap-inventory.md). The organization, billing account, bootstrap project, remote-state bucket, and billing-level budget guardrail already exist. Terraform owns both environment projects. Staging project `udm-liw-staging-100724` is at **S1 PARTIAL — RECOVERY REQUIRED** with 55 preserved state addresses; production does not exist. See the live [GCP environment inventory](../operations/gcp-environment-inventory.md) and canonical [environment lifecycle](../operations/environment-lifecycle.md). Review never authorizes apply, secret payloads, DNS/GitHub changes, or HubSpot deployment.
+The manual GCP bootstrap is complete and inventoried in [GCP bootstrap inventory](../operations/gcp-bootstrap-inventory.md). The organization, billing account, bootstrap project, remote-state bucket, and billing-level budget guardrail already exist. Terraform owns both environment projects. Staging project `udm-liw-staging-100724` has a complete 58-address S1 foundation and is parked with Cloud SQL stopped; production does not exist. S2 artifact publication has not occurred. Use the canonical [automation guide](../operations/automation-guide.md), live [GCP environment inventory](../operations/gcp-environment-inventory.md), [artifact lifecycle](../operations/artifact-lifecycle.md), and [environment lifecycle](../operations/environment-lifecycle.md). Review never authorizes apply, artifact publication, secret payloads, DNS/GitHub changes, or HubSpot deployment.
 
 ## Build and runtime roles
 
-Build the single OCI artifact from the repository root:
+Build and inspect both required artifacts through the canonical command surface:
 
-```bash
-docker build \
-  --build-arg SOURCE_REVISION="$(git rev-parse HEAD)" \
-  --build-arg BUILD_TIME=1970-01-01T00:00:00Z \
-  -t line-item-watch:local .
+```sh
+./scripts/liw artifact build --revision "$(git rev-parse HEAD)"
+./scripts/liw artifact inspect --revision "$(git rev-parse HEAD)"
 ```
 
 `APPLICATION_RUNTIME_ROLE` selects `SERVICE`, `MIGRATE`, `OPERATOR`, or local compatibility mode. Production uses the first three only:
@@ -30,20 +28,16 @@ Both roots use the existing bootstrap-owned bucket `udm-liw-tfstate-100724751179
 
 The bucket is external to both environment modules and must not be imported into or recreated by them. Separate roots and prefixes are the isolation boundary; use only the default workspace and do not use Terraform workspaces to switch environments. State can contain sensitive infrastructure metadata, so runtime identities get no access and configuration must continue to keep secret payloads outside Terraform.
 
-The initialization path is: **authenticated local operator → user Application Default Credentials → existing GCS bucket → `terraform init` → environment plan/review**. On first creation the plan includes the target project; on current staging recovery it refreshes the 55-address partial state. CLI login and ADC are separate as described in [developer tooling](tooling.md).
+The initialization path is: **authenticated local operator → user Application Default Credentials → existing GCS bucket → `terraform init` → environment plan/review**. On first creation the plan includes the target project; current staging refreshes its complete 58-address parked-foundation state. CLI login and ADC are separate as described in [developer tooling](tooling.md).
 
-For staging initialization on an authenticated workstation:
+For staging planning on an authenticated workstation, use the canonical wrapper:
 
 ```sh
 gcloud auth login
 gcloud auth application-default login
 gcloud auth list
 gcloud config set project udm-liw-bootstrap-02
-terraform -chdir=infra/staging init
-terraform -chdir=infra/staging fmt -check
-terraform -chdir=infra/staging validate
-terraform -chdir=infra/staging plan -out=staging.tfplan
-terraform -chdir=infra/staging show staging.tfplan
+./scripts/liw infra plan staging --var-file <ignored-file> --out /tmp/staging-reviewed.tfplan
 ```
 
 This flow is human `gcloud` authentication plus user ADC, then the existing GCS bucket, then `terraform init`, then staging plan/review. Do not run `terraform init -migrate-state`; the staging state already belongs at its checked-in prefix. Do not commit the saved plan or `.terraform/`; plan files can contain sensitive infrastructure values.
@@ -57,11 +51,11 @@ After external authorization:
 1. Confirm the manual bootstrap inventory instead of recreating the organization, billing account, bootstrap project, state bucket, or billing-level budget.
 2. Choose a globally unique environment `project_id` and the approved `project_name`, `environment`, and `region`. Supply the account-specific billing ID only through a protected local mechanism such as `TF_VAR_billing_account_id`; do not commit it.
 3. Authenticate `gcloud` and ADC, then initialize the chosen root against its checked-in backend. For a new environment, the target project must not pre-exist: the provider has no target-project default, and the module creates it under the configured organization before enabling its APIs. Current staging is not new; preserve and refresh its existing remote state.
-4. Copy the non-secret example values to an ignored local variable file, then run `terraform fmt -check`, `terraform validate`, and review a saved staging `terraform plan`. Confirm the `google_project` organization parent, billing association, required labels, deletion safeguards, API order, resource count, database tier/storage, parked state, edge exclusions, and estimated cost. Applying requires a separate explicit authorization.
+4. Copy the non-secret example values to an ignored local variable file, run `./scripts/liw infra validate staging`, then create/classify a saved plan through `./scripts/liw infra plan staging`. Confirm the `google_project` organization parent, billing association, required labels, deletion safeguards, API order, resource count, database tier/storage, parked state, edge exclusions, and estimated cost. Applying requires a separate explicit authorization.
 5. Apply the foundation with `provision_runtime=false` and `deploy_service=false`. This creates the environment project, attaches billing, enables Service Usage then Resource Manager then the remaining required APIs, and creates Artifact Registry, secret containers, identities/WIF, Cloud SQL, and foundation monitoring. It creates no Cloud Run service/jobs and needs no image digest, HubSpot runtime IDs, secret numeric versions, or generated Cloud Run origin input. Terraform creates no secret payloads. Staging Cloud SQL initial creation additionally requires `staging_parked=true` and the transitional `database_bootstrap_active=true`; immediately follow it with a separately reviewed `database_bootstrap_active=false` park plan. The override affects only SQL activation and is invalid with runtime gates.
 6. Provision `pg_trgm` and the initial database roles with `infra/database/bootstrap-roles.sql` as the bootstrap database administrator. Pass passwords with protected `psql` variables or a secure interactive method; never save them in shell history/source.
 7. Add each secret payload out of band and record its immutable numeric version. Update `secret_versions`; never use `latest`.
-8. Configure the staging GitHub Environment and manually run `Deliver staging` with `artifact_only=true`. Record the emitted immutable image reference; this bootstrap digest is not yet staging-accepted.
+8. Before merging the reviewed artifact implementation to `main`, configure and protect the staging GitHub Environment as described in the artifact lifecycle runbook. Merge the accepted checkpoint through the protected path; merge does not trigger delivery. Then separately authorize a manual `Deliver staging` run from that exact `main` SHA with `artifact_only=true`, `run_migrations=false`, and `verify=false`. Record both emitted immutable image references; these bootstrap digests are not yet staging-accepted. Do not weaken WIF to publish from a feature branch or use a local push as a substitute for proving the intended OIDC path.
 9. Set `image_digest` to that digest and `provision_runtime=true` while keeping `deploy_service=false`; supply the HubSpot IDs, active key IDs, and only the explicit secret versions consumed by the jobs. Review and apply to create the migration/operator jobs. Never set `provision_runtime` back to false after this point because that requests destruction of the jobs.
 10. Execute the migration job, then rerun `infra/database/bootstrap-roles.sql` so existing application tables receive runtime and bounded operator grants while Liquibase tables remain inaccessible to runtime/operator identities.
 11. Set `deploy_service=true`; for staging also set `staging_parked=false`. Review and apply to create the service and, in production only, its load-balancer resources. Never set `deploy_service` back to false after this point because that requests service destruction.
@@ -77,7 +71,7 @@ Staging: `GCP_STAGING_PROJECT_ID`, `GCP_STAGING_WIF_PROVIDER`, `GCP_STAGING_DEPL
 
 Production: `GCP_PRODUCTION_PROJECT_ID`, `GCP_PRODUCTION_WIF_PROVIDER`, `GCP_PRODUCTION_DEPLOYER_SERVICE_ACCOUNT`, `GCP_PRODUCTION_ARTIFACT_REPOSITORY`, `GCP_PRODUCTION_MIGRATION_JOB`, `GCP_PRODUCTION_SERVICE`, `GCP_PRODUCTION_SYNTHETIC_JOB`, and `GCP_PRODUCTION_API_ORIGIN`. Promotion also reads the staging repository so its identity needs the narrowly scoped cross-project artifact access prepared by Terraform. Production browser secrets are read by the Cloud Run job directly from Secret Manager and never enter GitHub Actions.
 
-No static service-account JSON key is supported. Both GCP WIF providers require the exact repository, protected GitHub Environment, and `refs/heads/main`; manual `workflow_dispatch` remains supported when dispatched from `main`. Production remains isolated in its own project/pool and never auto-deploys from `main`; it must use the exact staging-accepted digest.
+No static service-account JSON key is supported. Both GCP WIF providers require the exact repository, protected GitHub Environment, and `refs/heads/main`; manual `workflow_dispatch` remains supported when dispatched from `main`. The feature branch therefore cannot authenticate and must not be added to the provider condition. Production remains isolated in its own project/pool and never auto-deploys from `main`; it must use the exact staging-accepted digest.
 
 ## HubSpot environment values
 
@@ -95,7 +89,7 @@ The detailed verification, rollback, drift, emergency, and scaling procedures ar
 ### Park
 
 1. Confirm no acceptance, migration, operator, or incident work is running and no webhook continuity is expected.
-2. Set `staging_parked=true` and `database_bootstrap_active=false`, create and inspect a staging-only saved plan, and apply only through an authorized infrastructure change.
+2. Run `./scripts/liw env plan-park staging` with the approved ignored inputs. After review and separate authorization, use the exact-token `env park` command; it forces `staging_parked=true` and `database_bootstrap_active=false`, classifies the saved plan, and requires a no-changes post-plan.
 3. Verify Cloud Run minimum instances are zero, Cloud SQL activation is `NEVER`, and Terraform removes public readiness uptime checks plus active Cloud Run, Cloud SQL, database-availability, and worker/reliability alert policies. Staging has no scheduled browser synthetic; protected delivery E2E remains available only after unpark.
 
 The project, Artifact Registry, secret containers, database storage/backups, metric definitions/logging, and remote state remain. Active application/database alerts are intentionally absent while parked so a stopped database cannot generate an expected outage storm. Those retained services create residual storage/logging and database-storage/backup cost even while compute is parked.
@@ -104,12 +98,12 @@ With Cloud Run min zero, an HTTP/webhook request can cold-start the service only
 
 ### Unpark
 
-1. Set `staging_parked=false` and keep `database_bootstrap_active=false`, review the staging-only plan, and apply with explicit authorization.
+1. Run `./scripts/liw env plan-unpark staging` with the approved ignored inputs. After review and separate authorization, use the exact-token `env unpark` command; it forces `staging_parked=false` and `database_bootstrap_active=false` and applies only its classified saved plan.
 2. Wait for Cloud SQL to report runnable and Cloud Run to reach min one.
 3. Confirm Terraform restores public readiness, Cloud Run, Cloud SQL/database-availability, and worker/reliability alert policies. Execute the migration job, verify liveness and readiness, then verify workers and backlog/processing/reconciliation health.
 4. Run backend smoke and the protected real HubSpot Playwright staging journey before acceptance work.
 
-Never apply the parked setting to production. A future manual GitHub Actions lifecycle workflow may wrap the same reviewed Terraform change, but console clicks and application-owned infrastructure control are not the target operating model.
+Never apply the parked setting to production. The canonical wrapper rejects production lifecycle mutation; console clicks and application-owned infrastructure control are not the target operating model.
 
 ## Environment decommission
 
@@ -127,22 +121,8 @@ Production lifecycle phases are defined in [production topology](../architecture
 
 ## Verification without GCP
 
-```bash
-./backend/mvnw -f backend/pom.xml verify
-npm --prefix src/app/cards ci
-npm --prefix src/app/cards run typecheck
-npm --prefix src/app/cards run lint
-npm --prefix src/app/cards run format:check
-npm --prefix src/app/cards test -- --run
-npm --prefix assurance ci
-npm --prefix assurance run typecheck
-npm --prefix assurance run test:config
-npm --prefix assurance test
-npm --prefix assurance run test:visual
-hs project lint --install-missing-deps=false --no-color
-terraform fmt -check -recursive infra
-(cd infra/staging && terraform init -backend=false && terraform validate)
-(cd infra/production && terraform init -backend=false && terraform validate)
+```sh
+./scripts/liw verify all
 ```
 
 The CI container job additionally builds the image, verifies Java 25 and the minimal non-root JRE contents, exercises successful and failed `MIGRATE`, proves an invalid `OPERATOR` invocation exits non-zero, starts `SERVICE` on a non-default `PORT`, checks liveness/readiness, and requests a graceful stop.

@@ -4,7 +4,7 @@ Inventory verified read-only on 2026-10-03. The shared bootstrap inventory is ma
 
 ## Current status
 
-**STAGING S1 FOUNDATION COMPLETE — PARKED.** Project `udm-liw-staging-100724` exists under organization `656511895628`; Terraform remote state contains 58 managed addresses at prefix `line-item-watch/staging`. The approved S1R-A recovery created the WIF provider, Cloud SQL instance, and application database. S1R-B then changed only Cloud SQL `activation_policy` from `ALWAYS` to `NEVER`; the mandatory post-apply plan reported `NO CHANGES`. Runtime is not deployed, S2 artifact bootstrap is not started, and S1H bootstrap hardening remains deferred and required before production.
+**STAGING S1 FOUNDATION COMPLETE — PARKED.** Project `udm-liw-staging-100724` exists under organization `656511895628`; Terraform remote state contains 58 managed addresses at prefix `line-item-watch/staging`. The approved S1R-A recovery created the WIF provider, Cloud SQL instance, and application database. S1R-B then changed only Cloud SQL `activation_policy` from `ALWAYS` to `NEVER`; the mandatory post-apply plan reported `NO CHANGES`. Runtime is not deployed. S2 artifact hardening and the executable operations layer are implemented and validated locally, but Artifact Registry still contains zero images and publication is not authorized. S1H bootstrap hardening remains deferred and required before production.
 
 Production is **NOT PROVISIONED**. The production state prefix remains `line-item-watch/production` and is isolated from staging.
 
